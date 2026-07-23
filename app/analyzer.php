@@ -26,7 +26,9 @@ function extract_content(string $html): array {
     if (preg_match_all('/(?:title|alt|aria-label)\s*=\s*"([^"]{3,300})"/i', $html, $m)) {
         $attrs = array_values(array_unique(array_map('trim', $m[1])));
     }
-    $clean = preg_replace('#<(script|style|noscript)\b[^>]*>.*?</\1>#is', ' ', $html) ?? $html;
+    // Navigation, Skripte, Styles, SVG und Kommentare entfernen (Menü-Rauschen raus)
+    $clean = preg_replace('#<(script|style|noscript|nav|svg)\b[^>]*>.*?</\1>#is', ' ', $html) ?? $html;
+    $clean = preg_replace('#<!--.*?-->#s', ' ', $clean) ?? $clean;
     $text  = html_entity_decode(strip_tags($clean), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $text  = preg_replace('/\s+/u', ' ', $text);
     return ['text' => trim((string)$text), 'attrs' => $attrs];
@@ -150,10 +152,32 @@ function split_units(string $text): array {
     return $out;
 }
 
+/** Erkennt Navigations-/Linklisten (lange Blöcke ohne Satzzeichen) → nicht prüfen. */
+function is_boilerplate(string $unit): bool {
+    if (mb_strlen($unit) < 180) { return false; }
+    $punct = preg_match_all('/[.!?:]/u', $unit);
+    $words = preg_match_all('/\S+/u', $unit);
+    return ($punct <= 1 && $words >= 25);
+}
+
+/** Schneidet einen fokussierten Ausschnitt rund um den Trigger-Begriff aus. */
+function snippet_window(string $unit, string $term): string {
+    $pos = mb_stripos($unit, $term);
+    if ($pos === false) { return trim(mb_substr($unit, 0, 240)); }
+    $start = max(0, $pos - 90);
+    $len   = mb_strlen($term) + 180;
+    $snip  = mb_substr($unit, $start, $len);
+    if ($start > 0) { $snip = '…' . $snip; }
+    if ($start + $len < mb_strlen($unit)) { $snip .= '…'; }
+    return trim($snip);
+}
+
 /** Bildet Kandidaten: jede Text-/Attribut-Stelle mit einem Trigger-Begriff. */
 function build_candidates(array $rules, string $text, array $attrs): array {
     $units = [];
-    foreach (split_units($text) as $s) { $units[] = ['t' => $s, 'ct' => 'text']; }
+    foreach (split_units($text) as $s) {
+        if (!is_boilerplate($s)) { $units[] = ['t' => $s, 'ct' => 'text']; }
+    }
     foreach ($attrs as $a) { $a = trim($a); if ($a !== '') { $units[] = ['t' => $a, 'ct' => 'tooltip']; } }
 
     $cands = [];
@@ -164,7 +188,7 @@ function build_candidates(array $rules, string $text, array $attrs): array {
             foreach ($terms as $term) {
                 if ($term === '') { continue; }
                 if (mb_stripos($u['t'], $term) !== false) {
-                    $snippet = mb_substr($u['t'], 0, 400);
+                    $snippet = snippet_window($u['t'], $term);
                     $key = mb_strtolower($r['rule_id'] . '|' . preg_replace('/\s+/u', ' ', $snippet));
                     if (isset($seen[$key])) { break; }
                     $seen[$key] = true;
