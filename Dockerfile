@@ -1,8 +1,8 @@
 FROM php:8.3-cli-alpine
 
-# PostgreSQL + curl PHP-Extensions
-RUN apk add --no-cache postgresql-dev curl-dev oniguruma-dev \
-    && docker-php-ext-install pdo pdo_pgsql curl mbstring
+# PostgreSQL + curl + zip PHP-Extensions
+RUN apk add --no-cache postgresql-dev curl-dev oniguruma-dev libzip-dev \
+    && docker-php-ext-install pdo pdo_pgsql curl mbstring zip
 
 ENV PHP_CLI_SERVER_WORKERS=4
 

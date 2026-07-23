@@ -123,26 +123,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     }
 }
 
-// Regeln importieren (CSV-Upload)
+// Regeln importieren (CSV- oder xlsx-Upload)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import_rules') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $error = 'Ungültiges Formular (CSRF).';
-    } elseif (empty($_FILES['csv']['tmp_name']) || !is_uploaded_file($_FILES['csv']['tmp_name'])) {
-        $error = 'Keine CSV-Datei hochgeladen.';
+    } elseif (empty($_FILES['rulefile']['tmp_name']) || !is_uploaded_file($_FILES['rulefile']['tmp_name'])) {
+        $error = 'Keine Datei hochgeladen.';
     } else {
         try {
-            $imported = import_rules_csv($_FILES['csv']['tmp_name']);
+            $name = $_FILES['rulefile']['name'] ?? '';
+            $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+            $rows = $ext === 'xlsx'
+                ? parse_xlsx_rows($_FILES['rulefile']['tmp_name'])
+                : parse_csv_rows($_FILES['rulefile']['tmp_name']);
+            $imported = upsert_rules($rows);
             $info = "$imported Regel(n) importiert/aktualisiert.";
         } catch (Throwable $e) { $error = $e->getMessage(); }
     }
 }
 
-/** Liest eine CSV (Header: rule_id,category,description,trigger_terms,example_violation,example_ok,law_reference) und upsertet. */
-function import_rules_csv(string $path): int {
+/** Liest eine CSV und liefert assoziative Zeilen (Header-Spalten als Schlüssel). */
+function parse_csv_rows(string $path): array {
     $raw = file_get_contents($path);
     if ($raw === false || $raw === '') { throw new RuntimeException('CSV ist leer.'); }
     $raw = preg_replace('/^\xEF\xBB\xBF/', '', $raw); // BOM entfernen
-    // Trennzeichen erkennen (; oder ,)
     $firstLine = strtok($raw, "\r\n");
     $delim = (substr_count($firstLine, ';') > substr_count($firstLine, ',')) ? ';' : ',';
 
@@ -153,10 +157,87 @@ function import_rules_csv(string $path): int {
     $header = fgetcsv($fh, 0, $delim);
     if (!$header) { throw new RuntimeException('CSV-Kopfzeile fehlt.'); }
     $header = array_map(fn($h) => strtolower(trim((string)$h)), $header);
-    $idx = array_flip($header);
-    $need = 'rule_id';
-    if (!isset($idx[$need])) { throw new RuntimeException('Spalte "rule_id" fehlt in der CSV.'); }
 
+    $rows = [];
+    while (($row = fgetcsv($fh, 0, $delim)) !== false) {
+        $assoc = [];
+        foreach ($header as $i => $col) {
+            $assoc[$col] = isset($row[$i]) ? trim((string)$row[$i]) : '';
+        }
+        $rows[] = $assoc;
+    }
+    fclose($fh);
+    return $rows;
+}
+
+/** Liest eine xlsx (erstes Blatt) und liefert assoziative Zeilen (Header-Spalten als Schlüssel). */
+function parse_xlsx_rows(string $path): array {
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('ZIP-Extension fehlt (xlsx nicht lesbar). CSV nutzen oder Deploy abwarten.');
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($path) !== true) { throw new RuntimeException('xlsx konnte nicht geöffnet werden.'); }
+    $sharedRaw = $zip->getFromName('xl/sharedStrings.xml');
+    $sheetRaw  = $zip->getFromName('xl/worksheets/sheet1.xml');
+    $zip->close();
+    if ($sheetRaw === false) { throw new RuntimeException('Kein Tabellenblatt in der xlsx gefunden.'); }
+
+    // Shared Strings
+    $shared = [];
+    if ($sharedRaw !== false && $sharedRaw !== '') {
+        $d = new DOMDocument();
+        @$d->loadXML($sharedRaw);
+        foreach ($d->getElementsByTagNameNS('*', 'si') as $si) {
+            $txt = '';
+            foreach ($si->getElementsByTagNameNS('*', 't') as $t) { $txt .= $t->textContent; }
+            $shared[] = $txt;
+        }
+    }
+
+    // Zeilen/Zellen
+    $d = new DOMDocument();
+    @$d->loadXML($sheetRaw);
+    $grid = [];
+    foreach ($d->getElementsByTagNameNS('*', 'row') as $row) {
+        $cells = [];
+        foreach ($row->getElementsByTagNameNS('*', 'c') as $c) {
+            $ref  = $c->getAttribute('r');
+            $col  = preg_replace('/\d+/', '', $ref);
+            $type = $c->getAttribute('t');
+            $val  = '';
+            if ($type === 'inlineStr') {
+                foreach ($c->getElementsByTagNameNS('*', 't') as $t) { $val .= $t->textContent; }
+            } else {
+                $vnode = $c->getElementsByTagNameNS('*', 'v')->item(0);
+                $val = $vnode ? $vnode->textContent : '';
+                if ($type === 's') { $val = $shared[(int)$val] ?? ''; }
+            }
+            $cells[$col] = trim($val);
+        }
+        $grid[] = $cells;
+    }
+    if (!$grid) { return []; }
+
+    // Header (erste Zeile) -> Spaltenbuchstabe => Spaltenname
+    $headerRow = array_shift($grid);
+    $map = [];
+    foreach ($headerRow as $letter => $name) {
+        $n = strtolower(trim((string)$name));
+        if ($n !== '') { $map[$letter] = $n; }
+    }
+    $rows = [];
+    foreach ($grid as $cells) {
+        $assoc = [];
+        foreach ($map as $letter => $name) {
+            $assoc[$name] = $cells[$letter] ?? '';
+        }
+        $rows[] = $assoc;
+    }
+    return $rows;
+}
+
+/** Upsertet Regelzeilen (assoziativ, Schlüssel = Spaltennamen) in die DB. */
+function upsert_rules(array $rows): int {
     $stmt = db()->prepare(
         "INSERT INTO rules (rule_id, category, description, trigger_terms, example_violation, example_ok, law_reference, active)
          VALUES (:rule_id, :category, :description, :trigger_terms, :example_violation, :example_ok, :law_reference, TRUE)
@@ -164,23 +245,21 @@ function import_rules_csv(string $path): int {
             category=EXCLUDED.category, description=EXCLUDED.description, trigger_terms=EXCLUDED.trigger_terms,
             example_violation=EXCLUDED.example_violation, example_ok=EXCLUDED.example_ok, law_reference=EXCLUDED.law_reference"
     );
-    $get = fn($row, $col) => isset($idx[$col]) && isset($row[$idx[$col]]) ? trim((string)$row[$idx[$col]]) : '';
     $count = 0;
-    while (($row = fgetcsv($fh, 0, $delim)) !== false) {
-        $rid = $get($row, 'rule_id');
+    foreach ($rows as $r) {
+        $rid = trim((string)($r['rule_id'] ?? ''));
         if ($rid === '') { continue; }
         $stmt->execute([
-            ':rule_id'           => $rid,
-            ':category'          => $get($row, 'category'),
-            ':description'       => $get($row, 'description'),
-            ':trigger_terms'     => $get($row, 'trigger_terms'),
-            ':example_violation' => $get($row, 'example_violation'),
-            ':example_ok'        => $get($row, 'example_ok'),
-            ':law_reference'     => $get($row, 'law_reference'),
+            ':rule_id'           => mb_substr($rid, 0, 120),
+            ':category'          => (string)($r['category'] ?? ''),
+            ':description'       => (string)($r['description'] ?? ''),
+            ':trigger_terms'     => (string)($r['trigger_terms'] ?? ''),
+            ':example_violation' => (string)($r['example_violation'] ?? ''),
+            ':example_ok'        => (string)($r['example_ok'] ?? ''),
+            ':law_reference'     => (string)($r['law_reference'] ?? ''),
         ]);
         $count++;
     }
-    fclose($fh);
     return $count;
 }
 
@@ -244,11 +323,11 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
 
 <h2>Regeln importieren</h2>
 <div class="card">
-  <p class="hint" style="margin-top:0">CSV mit Spalten: <code>rule_id, category, description, trigger_terms, example_violation, example_ok, law_reference</code>. Bestehende Regeln (gleiche <code>rule_id</code>) werden aktualisiert.</p>
+  <p class="hint" style="margin-top:0">Datei (<code>.xlsx</code> oder <code>.csv</code>) mit Spalten: <code>rule_id, category, description, trigger_terms, example_violation, example_ok, law_reference</code>. Bestehende Regeln (gleiche <code>rule_id</code>) werden aktualisiert.</p>
   <form method="post" action="/admin.php" enctype="multipart/form-data">
     <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
     <input type="hidden" name="action" value="import_rules">
-    <input type="file" name="csv" accept=".csv" required style="margin-top:8px">
+    <input type="file" name="rulefile" accept=".csv,.xlsx" required style="margin-top:8px">
     <button type="submit">Importieren</button>
   </form>
 </div>

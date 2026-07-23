@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["php83", "php83Extensions.curl", "php83Extensions.pdo_pgsql", "php83Extensions.mbstring", "php83Extensions.openssl"]
+nixPkgs = ["php83", "php83Extensions.curl", "php83Extensions.pdo_pgsql", "php83Extensions.mbstring", "php83Extensions.zip", "php83Extensions.openssl"]
 
 [variables]
 PHP_CLI_SERVER_WORKERS = "4"
