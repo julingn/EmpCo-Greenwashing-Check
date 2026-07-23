@@ -143,13 +143,22 @@ function page_head(string $title, string $active = ''): void {
   details.rule[open]>summary .sum-chevron{transform:rotate(180deg)}
   .form-actions{display:flex;gap:8px;align-items:center;margin-top:16px}
   .form-actions button{margin-top:0}
-  .admin-layout{display:grid;grid-template-columns:210px 1fr;gap:28px;align-items:start}
+  .admin-layout{display:grid;grid-template-columns:220px 1fr;gap:28px;align-items:start}
   @media(max-width:720px){.admin-layout{grid-template-columns:1fr}}
-  .admin-nav{display:flex;flex-direction:column;gap:4px;position:sticky;top:24px}
-  .admin-nav a{display:block;padding:10px 14px;border-radius:var(--radius);color:var(--text2);
-        text-decoration:none;font-size:14px;font-weight:600}
-  .admin-nav a:hover{background:var(--accent-bg);color:var(--accent)}
-  .admin-nav a.active{background:var(--accent-bg);color:var(--accent)}
+  .admin-nav{position:sticky;top:24px;background:var(--card);border:1px solid var(--border);
+        border-radius:var(--radius-lg);padding:8px;box-shadow:var(--shadow-sm)}
+  .admin-nav .nav-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+        color:var(--text3);padding:10px 10px 6px}
+  .admin-nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius);
+        color:var(--text2);text-decoration:none;font-size:13px;font-weight:500;margin-bottom:2px;
+        border-left:2px solid transparent;transition:background .12s,color .12s}
+  .admin-nav a svg{flex-shrink:0;opacity:.55}
+  .admin-nav a:hover{background:#F1F5F9;color:var(--text)}
+  .admin-nav a:hover svg{opacity:1}
+  .admin-nav a.active{background:var(--accent-bg);color:var(--accent);font-weight:600;border-left:2px solid var(--accent)}
+  .admin-nav a.active svg{opacity:1}
+  .admin-nav a .count{margin-left:auto;font-size:11px;color:var(--text3);font-weight:700}
+  .admin-nav a.active .count{color:var(--accent)}
   .admin-content{min-width:0}
 </style>
 </head>

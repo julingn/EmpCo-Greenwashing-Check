@@ -391,8 +391,15 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
 
 <div class="admin-layout">
   <nav class="admin-nav">
-    <a href="/admin.php?section=rules" class="<?= $section === 'rules' ? 'active' : '' ?>">Regeln (<?= count($rules) ?>)</a>
-    <a href="/admin.php?section=agents" class="<?= $section === 'agents' ? 'active' : '' ?>">KI-Redakteure (<?= count($agents) ?>)</a>
+    <div class="nav-label">Verwaltung</div>
+    <a href="/admin.php?section=rules" class="<?= $section === 'rules' ? 'active' : '' ?>">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="14" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+      Regeln <span class="count"><?= count($rules) ?></span>
+    </a>
+    <a href="/admin.php?section=agents" class="<?= $section === 'agents' ? 'active' : '' ?>">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      KI-Redakteure <span class="count"><?= count($agents) ?></span>
+    </a>
   </nav>
 
   <div class="admin-content">
