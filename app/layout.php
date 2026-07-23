@@ -92,6 +92,38 @@ function page_head(string $title, string $active = ''): void {
   .spinner{display:inline-block;width:15px;height:15px;border:2px solid var(--accent-border);
         border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
   @keyframes spin{to{transform:rotate(360deg)}}
+  /* Findings */
+  .sev-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:3px 10px;border-radius:999px}
+  .sev-chip .dot{width:8px;height:8px;border-radius:50%}
+  .sev-chip.violation{background:var(--red-bg);color:var(--red)} .sev-chip.violation .dot{background:var(--red)}
+  .sev-chip.warn{background:var(--amber-bg);color:var(--amber)} .sev-chip.warn .dot{background:var(--amber)}
+  .sev-chip.info{background:var(--accent-bg);color:var(--accent)} .sev-chip.info .dot{background:var(--accent)}
+  .finding{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--border2);
+        border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:16px 20px;margin-bottom:12px;transition:opacity .15s}
+  .finding.violation{border-left-color:var(--red)}
+  .finding.warn{border-left-color:var(--amber)}
+  .finding.info{border-left-color:var(--accent)}
+  .finding.resolved{opacity:.5}
+  .finding-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .sev-name{font-weight:700;font-size:13px}
+  .finding.violation .sev-name{color:var(--red)}
+  .finding.warn .sev-name{color:var(--amber)}
+  .finding.info .sev-name{color:var(--accent)}
+  .finding-cat{font-size:12px;font-weight:600;color:var(--text2);background:var(--bg);
+        border:1px solid var(--border);padding:2px 9px;border-radius:6px}
+  .finding-meta{margin-left:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+        font-size:11px;color:var(--text3);text-align:right}
+  .finding-status{font-size:12px;font-weight:700;color:var(--green)}
+  .finding-quote{margin:12px 0 8px;font-size:15px;line-height:1.55;color:var(--text);
+        padding-left:14px;border-left:2px solid var(--border2)}
+  .finding-assess{color:var(--text2);font-size:13.5px;line-height:1.5}
+  .finding-actions{display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+  .btn-soft{display:inline-flex;align-items:center;gap:6px;background:#F1F5F9;color:var(--text2);
+        border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;
+        cursor:pointer;margin:0;font-family:inherit;text-decoration:none;transition:.12s}
+  .btn-soft:hover{background:#E7EDF4;color:var(--text)}
+  .btn-soft.ok:hover{background:var(--green-bg);color:var(--green);border-color:var(--green-border)}
+  .btn-download{display:inline-flex;align-items:center;gap:8px;margin:0}
   details.rule{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
         box-shadow:var(--shadow-sm);margin-bottom:10px;overflow:hidden;
         transition:box-shadow .15s,border-color .15s}

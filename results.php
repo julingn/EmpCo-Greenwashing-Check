@@ -50,6 +50,8 @@ $statusLabel = ['open' => 'offen', 'ignored' => 'ignoriert', 'done' => 'erledigt
 $checkLabel = ['text' => 'Text', 'code' => 'Code', 'js' => 'JS', 'ocr' => 'OCR'];
 $counts = ['open' => 0, 'ignored' => 0, 'done' => 0];
 foreach ($findings as $ff) { $counts[$ff['status']] = ($counts[$ff['status']] ?? 0) + 1; }
+$sevCounts = ['violation' => 0, 'warn' => 0, 'info' => 0];
+foreach ($findings as $ff) { $sevCounts[$ff['severity']] = ($sevCounts[$ff['severity']] ?? 0) + 1; }
 
 page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
 ?>
@@ -129,15 +131,18 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
     </div>
   </div>
 
-  <div style="display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px;flex-wrap:wrap;gap:12px">
-    <h2 style="margin:0">
-      <?= count($findings) ?> Finding<?= count($findings) === 1 ? '' : 's' ?>
-      <span style="font-size:13px;font-weight:500;color:var(--text2)">
-        · <?= (int)$counts['open'] ?> offen · <?= (int)$counts['ignored'] ?> ignoriert · <?= (int)$counts['done'] ?> erledigt
-      </span>
-    </h2>
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin:24px 0 14px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="margin:0 0 8px"><?= count($findings) ?> Finding<?= count($findings) === 1 ? '' : 's' ?></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <?php if ($sevCounts['violation']): ?><span class="sev-chip violation"><span class="dot"></span><?= (int)$sevCounts['violation'] ?> Verstoß</span><?php endif; ?>
+        <?php if ($sevCounts['warn']): ?><span class="sev-chip warn"><span class="dot"></span><?= (int)$sevCounts['warn'] ?> Prüfen</span><?php endif; ?>
+        <?php if ($sevCounts['info']): ?><span class="sev-chip info"><span class="dot"></span><?= (int)$sevCounts['info'] ?> Hinweis</span><?php endif; ?>
+        <span style="font-size:12px;color:var(--text3);align-self:center">· <?= (int)$counts['open'] ?> offen · <?= (int)$counts['done'] ?> erledigt · <?= (int)$counts['ignored'] ?> ignoriert</span>
+      </div>
+    </div>
     <?php if ($findings): ?>
-      <a href="/export.php?id=<?= (int)$id ?>" class="btn btn-ghost btn-sm" style="margin:0">Export (CSV/Excel)</a>
+      <a href="/export.php?id=<?= (int)$id ?>" class="btn btn-download">⭳ Export CSV/Excel</a>
     <?php endif; ?>
   </div>
 
@@ -147,40 +152,40 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
     <?php foreach ($findings as $f):
         $sev = $f['severity'];
         $st  = $f['status'];
-        $bg = $sev === 'violation' ? 'var(--red-bg)' : ($sev === 'warn' ? 'var(--amber-bg)' : 'var(--accent-bg)');
-        $bd = $sev === 'violation' ? 'var(--red-border)' : ($sev === 'warn' ? 'var(--amber-border)' : 'var(--accent-border)');
-        $dim = $st !== 'open' ? 'opacity:.55;' : '';
+        $resolved = $st !== 'open' ? ' resolved' : '';
     ?>
-      <div class="card" style="padding:16px 20px;<?= $dim ?>">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span class="badge <?= h($sev) ?>"><?= h($sevLabel[$sev] ?? $sev) ?></span>
-          <span class="tag"><?= h($f['category']) ?></span>
-          <span class="mono" style="color:var(--text3);font-size:12px"><?= h($f['rule_id']) ?></span>
-          <span class="badge skipped"><?= h($f['content_type']) ?></span>
-          <?php if ($st !== 'open'): ?><span class="badge ok"><?= h($statusLabel[$st] ?? $st) ?></span><?php endif; ?>
+      <div class="finding <?= h($sev) . $resolved ?>">
+        <div class="finding-head">
+          <span class="sev-name"><?= h($sevLabel[$sev] ?? $sev) ?></span>
+          <span class="finding-cat"><?= h($f['category']) ?></span>
+          <?php if ($st !== 'open'): ?><span class="finding-status">· <?= h($statusLabel[$st] ?? $st) ?></span><?php endif; ?>
+          <span class="finding-meta"><?= h($f['rule_id']) ?><br><?= h($f['content_type']) ?></span>
         </div>
-        <blockquote style="margin:12px 0 8px;padding:10px 14px;border-left:3px solid <?= $bd ?>;background:<?= $bg ?>;border-radius:6px;color:var(--text)">
-          „<?= h($f['snippet']) ?>"
-        </blockquote>
-        <div style="color:var(--text2);font-size:14px"><?= h($f['assessment']) ?></div>
-        <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="finding-quote">„<?= h($f['snippet']) ?>"</div>
+        <div class="finding-assess"><?= h($f['assessment']) ?></div>
+        <div class="finding-actions">
           <?php if ($st === 'open'): ?>
-            <?php foreach (['ignored' => 'Ignorieren', 'done' => 'Erledigt'] as $val => $lbl): ?>
-              <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
-                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-                <input type="hidden" name="action" value="finding_status">
-                <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
-                <input type="hidden" name="status" value="<?= $val ?>">
-                <button type="submit" class="btn-ghost btn-sm" style="margin:0"><?= $lbl ?></button>
-              </form>
-            <?php endforeach; ?>
+            <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
+              <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+              <input type="hidden" name="action" value="finding_status">
+              <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
+              <input type="hidden" name="status" value="done">
+              <button type="submit" class="btn-soft ok">✓ Erledigt</button>
+            </form>
+            <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
+              <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+              <input type="hidden" name="action" value="finding_status">
+              <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
+              <input type="hidden" name="status" value="ignored">
+              <button type="submit" class="btn-soft">⊘ Ignorieren</button>
+            </form>
           <?php else: ?>
             <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
               <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
               <input type="hidden" name="action" value="finding_status">
               <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
               <input type="hidden" name="status" value="open">
-              <button type="submit" class="btn-ghost btn-sm" style="margin:0">Zurücksetzen</button>
+              <button type="submit" class="btn-soft">↺ Zurücksetzen</button>
             </form>
           <?php endif; ?>
         </div>
