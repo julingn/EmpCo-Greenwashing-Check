@@ -1,26 +1,40 @@
 # EmpCo – Greenwashing Prüfung — Roadmap
 
 ## Vorbereitung (erledigt)
-- ✅ Projektordner angelegt + im Workspace
-- ✅ Doku angelegt (Must Read, Roadmap, Design System)
-- ✅ MVV-Markenhandbuch als Design-Basis übernommen
+- ✅ Projektordner + Workspace, Doku, MVV-Markenhandbuch als Design-Basis
+- ✅ Anforderungen abgestimmt (`ANFORDERUNGEN.md`)
+- ✅ Regelset vorliegend (empco_rules.xlsx, 23 Regeln) + BDEW-Anwendungshilfe
 
-## Vor dem Bau zu klären
-- ⬜ Eingabeart festlegen: Text einfügen vs. URL auslesen vs. beides
-- ⬜ Eigenes Regelset des Users einsammeln (EmpCo/UCPD/CRD)
+## Schritt 1 — Fundament (erledigt, live)
+- ✅ Grundgerüst (PHP 8.3, PostgreSQL, Railway) + Auto-Deploy
+- ✅ MVV-Design (Manrope, Tokens)
+- ✅ Login (Eingabe + Admin)
+- ✅ DB-Schema (rules, analyses, pages, findings, reformulations, training_examples, settings)
+- ✅ Regel-Import (xlsx **und** CSV) + Regeln tabellarisch editierbar im Admin
+- ✅ KI-Redakteur-Prompt im Admin editierbar
 
-## MVP (nach Freigabe)
-- ⬜ Projekt-Grundgerüst (PHP 8.3, PostgreSQL, Railway) + Auto-Deploy
-- ⬜ Regelset in Datenbank (vom Admin pflegbar)
-- ⬜ Analyse: Content-Bausteine gegen Regelset bewerten/kennzeichnen (Greenwashing-Befunde)
-- ⬜ Reformulierung: konforme Neuformulierung nach Regelset (KI)
-- ⬜ Admin-Bereich (Login) + ggf. Zugangsschutz der Eingabe
+## Schritt 2 — Analyse-Engine (als Nächstes)
+- ⬜ Eine URL auslesen (Text + Code/HTML)
+- ⬜ Prüfung gegen Regeln: Trigger-Begriffe + KI-Kontextbewertung
+- ⬜ Prüf-Status anzeigen (Text / Code / JS / OCR)
+- ⬜ Findings speichern
+
+## Schritt 3 — Ergebnisse
+- ⬜ Findings strukturiert (Kategorie, Ampel konform/prüfen/Verstoß)
+- ⬜ Ignorieren / Erledigt je Finding
+- ⬜ Export Excel/CSV
+
+## Schritt 4 — Umformulierung
+- ⬜ Vorschläge manuell + KI, akzeptieren/verwerfen
 
 ## Später
-- ⬜ Lernfunktion: aus manuellen Korrekturen neue Regeln vorschlagen (Admin-Freigabe)
-- ⬜ Export der Befunde/Reformulierungen
-- ⬜ Historie / mehrere Prüfläufe
+- ⬜ **PDF auslesen als Quelle** (statt/zusätzlich zur URL) — Upload eines PDF, Textextraktion + Prüfung wie bei URLs
+- ⬜ Bilder/OCR (Umweltaussagen/Siegel in Grafiken)
+- ⬜ TLD-Crawl (Tiefe 1/2/ganze Domain)
+- ⬜ Stufe 3b: Tone-of-Voice-Agenten nach der Umformulierung
+- ⬜ Lernfunktion: aus akzeptierten Änderungen neue Regeln/Trainingsbeispiele
+- ⬜ Historie / Archiv mehrerer Prüfläufe
 - ⬜ Suchmetriken/Filter für Content-Bausteine
 
 ## Notiz
-Detailfakten in `MUST_READ.md`, Design in `DESIGN_SYSTEM.md`.
+Detailfakten in `MUST_READ.md`, Anforderungen in `ANFORDERUNGEN.md`, Design in `DESIGN_SYSTEM.md`.
