@@ -64,6 +64,38 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
     <?php endforeach; ?>
   </div>
 
+  <?php if ($analysis['status'] === 'running'): ?>
+  <div class="card">
+    <div class="progress-head">
+      <div><span class="spinner"></span> <strong>Analyse läuft…</strong></div>
+      <div class="progress-pct" id="pct">0&nbsp;%</div>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="bar"></div></div>
+    <div class="hint" id="ptext">Fundstellen werden geprüft…</div>
+  </div>
+  <script>
+  (function(){
+    var id = <?= (int)$id ?>;
+    var bar = document.getElementById('bar'), pct = document.getElementById('pct'), ptext = document.getElementById('ptext');
+    function step(){
+      fetch('/analyze_step.php?id='+id)
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(d.error){ ptext.textContent = 'Fehler: '+d.error; return; }
+          var total = d.total||0, done = d.processed||0;
+          var p = total ? Math.round(done/total*100) : 100;
+          bar.style.width = p+'%'; pct.innerHTML = p+'&nbsp;%';
+          ptext.textContent = done+' von '+total+' Fundstellen geprüft';
+          if(d.finished){ ptext.textContent = 'Fertig — Ergebnis wird geladen…'; setTimeout(function(){ location.reload(); }, 600); }
+          else { setTimeout(step, 300); }
+        })
+        .catch(function(){ setTimeout(step, 1500); });
+    }
+    step();
+  })();
+  </script>
+  <?php else: ?>
+
   <div class="card" style="padding:14px 20px;font-size:13px;color:var(--text2)">
     <strong style="color:var(--text)">Legende</strong>
     <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">
@@ -105,6 +137,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         <div style="color:var(--text2);font-size:14px"><?= h($f['assessment']) ?></div>
       </div>
     <?php endforeach; ?>
+  <?php endif; ?>
   <?php endif; ?>
 <?php endif; ?>
 <?php

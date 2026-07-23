@@ -85,6 +85,13 @@ function page_head(string $title, string $active = ''): void {
   .count-pill{display:inline-block;background:var(--accent-bg);color:var(--accent);
         border-radius:999px;padding:4px 12px;font-size:13px;font-weight:700}
   code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  .progress-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .progress-pct{font-size:26px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+  .progress-bar-bg{height:8px;background:var(--accent-bg);border-radius:999px;overflow:hidden}
+  .progress-bar-fill{height:100%;background:var(--accent);width:0;border-radius:999px;transition:width .3s}
+  .spinner{display:inline-block;width:15px;height:15px;border:2px solid var(--accent-border);
+        border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
   details.rule{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
         box-shadow:var(--shadow-sm);margin-bottom:10px;overflow:hidden;
         transition:box-shadow .15s,border-color .15s}

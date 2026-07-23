@@ -48,12 +48,12 @@ function candidate_rules(array $rules, string $haystack): array {
 }
 
 /**
- * Führt eine Analyse aus: fetch → extract → prefilter → KI-Bewertung → Findings speichern.
- * @return array{findings:int, checks:array, note:string}
+ * Bereitet eine Analyse vor: fetch → extract → Seite speichern → Kandidaten bilden & speichern.
+ * Die eigentliche KI-Bewertung erfolgt danach schrittweise über process_step().
+ * @return array{total:int, note:string}
  */
-function run_analysis(int $analysisId, string $url): array {
+function prepare_analysis(int $analysisId, string $url): array {
     $checks = ['text' => 'skipped', 'code' => 'skipped', 'js' => 'skipped', 'ocr' => 'skipped'];
-    $note = '';
 
     $res = fetch_url($url);
     if ($res['html'] === '' || $res['code'] >= 400) {
@@ -61,50 +61,75 @@ function run_analysis(int $analysisId, string $url): array {
         $checks['code'] = 'failed';
         save_page($analysisId, $url, $checks);
         db()->prepare("UPDATE analyses SET status='error' WHERE id=:id")->execute([':id' => $analysisId]);
-        return ['findings' => 0, 'checks' => $checks, 'note' => 'Seite nicht erreichbar (HTTP ' . $res['code'] . ') ' . $res['error']];
+        return ['total' => 0, 'note' => 'Seite nicht erreichbar (HTTP ' . $res['code'] . ') ' . $res['error']];
     }
 
     $content = extract_content($res['html']);
     $checks['text'] = $content['text'] !== '' ? 'ok' : 'failed';
-    $checks['code'] = 'ok'; // HTML/Attribute wurden ausgewertet
-    // js/ocr bleiben 'skipped' (folgt in späterem Schritt)
-
-    $rules = db()->query("SELECT * FROM rules WHERE active ORDER BY rule_id")->fetchAll();
+    $checks['code'] = 'ok';
     $pageId = save_page($analysisId, $url, $checks);
 
-    // Kandidaten deterministisch aus Trigger-Treffern bilden (jede Fundstelle wird geprüft)
+    $rules = db()->query("SELECT * FROM rules WHERE active ORDER BY rule_id")->fetchAll();
     $candidates = build_candidates($rules, $content['text'], $content['attrs']);
 
-    $count = 0;
-    if ($candidates) {
+    $stmt = db()->prepare(
+        "INSERT INTO candidates (analysis_id, page_id, rule_id, category, content_type, snippet)
+         VALUES (:a, :p, :rid, :cat, :ct, :snip)"
+    );
+    foreach ($candidates as $c) {
+        $stmt->execute([
+            ':a' => $analysisId, ':p' => $pageId, ':rid' => $c['rule_id'],
+            ':cat' => $c['category'], ':ct' => $c['content_type'], ':snip' => mb_substr($c['snippet'], 0, 1000),
+        ]);
+    }
+
+    if (!$candidates) {
+        db()->prepare("UPDATE analyses SET status='done' WHERE id=:id")->execute([':id' => $analysisId]);
+    }
+    return ['total' => count($candidates), 'note' => ''];
+}
+
+/**
+ * Verarbeitet den nächsten Kandidaten-Block (ein KI-Aufruf) und speichert Findings.
+ * @return array{finished:bool, total:int, processed:int}
+ */
+function process_step(int $analysisId, int $size = 12): array {
+    $sel = db()->prepare(
+        "SELECT * FROM candidates WHERE analysis_id = :a AND processed = FALSE ORDER BY id LIMIT " . (int)$size
+    );
+    $sel->execute([':a' => $analysisId]);
+    $batch = $sel->fetchAll();
+
+    if ($batch) {
+        $rules = db()->query("SELECT * FROM rules WHERE active")->fetchAll();
         try {
-            $classified = ai_classify($candidates, $rules);
-            $stmt = db()->prepare(
+            $classified = ai_classify($batch, $rules);
+            $ins = db()->prepare(
                 "INSERT INTO findings (analysis_id, page_id, rule_id, category, content_type, snippet, assessment, severity, status)
                  VALUES (:a, :p, :rid, :cat, :ct, :snip, :ass, :sev, 'open')"
             );
+            $pageId = (int)($batch[0]['page_id'] ?? 0);
             foreach ($classified as $f) {
-                $stmt->execute([
-                    ':a'   => $analysisId,
-                    ':p'   => $pageId,
-                    ':rid' => $f['rule_id'],
-                    ':cat' => $f['category'],
-                    ':ct'  => $f['content_type'],
-                    ':snip'=> mb_substr($f['snippet'], 0, 1000),
-                    ':ass' => mb_substr($f['assessment'], 0, 1000),
-                    ':sev' => $f['severity'],
+                $ins->execute([
+                    ':a' => $analysisId, ':p' => $pageId ?: null, ':rid' => $f['rule_id'], ':cat' => $f['category'],
+                    ':ct' => $f['content_type'], ':snip' => mb_substr($f['snippet'], 0, 1000),
+                    ':ass' => mb_substr($f['assessment'], 0, 1000), ':sev' => $f['severity'],
                 ]);
-                $count++;
             }
         } catch (Throwable $e) {
-            $note = 'KI-Bewertung fehlgeschlagen: ' . $e->getMessage();
+            // Block trotzdem als verarbeitet markieren, damit die Analyse nicht hängen bleibt
         }
-    } else {
-        $note = 'Keine Trigger-Begriffe aus dem Regelset im Inhalt gefunden.';
+        $ids = array_map('intval', array_column($batch, 'id'));
+        db()->exec("UPDATE candidates SET processed = TRUE WHERE id IN (" . implode(',', $ids) . ")");
     }
 
-    db()->prepare("UPDATE analyses SET status='done' WHERE id=:id")->execute([':id' => $analysisId]);
-    return ['findings' => $count, 'checks' => $checks, 'note' => $note];
+    $total = (int) db()->query("SELECT COUNT(*) FROM candidates WHERE analysis_id = " . (int)$analysisId)->fetchColumn();
+    $done  = (int) db()->query("SELECT COUNT(*) FROM candidates WHERE analysis_id = " . (int)$analysisId . " AND processed")->fetchColumn();
+    $finished = $done >= $total;
+    if ($finished) {
+        db()->prepare("UPDATE analyses SET status='done' WHERE id=:id")->execute([':id' => $analysisId]);
+    }
+    return ['finished' => $finished, 'total' => $total, 'processed' => $done];
 }
 
 /** Speichert einen Seiten-Eintrag inkl. Prüf-Status. */

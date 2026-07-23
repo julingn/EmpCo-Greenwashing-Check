@@ -93,6 +93,21 @@ function db_init(): void {
         )
     ");
 
+    // Kandidaten (Trigger-Treffer, die schrittweise per KI bewertet werden)
+    db()->exec("
+        CREATE TABLE IF NOT EXISTS candidates (
+            id           SERIAL PRIMARY KEY,
+            analysis_id  INTEGER REFERENCES analyses(id) ON DELETE CASCADE,
+            page_id      INTEGER,
+            rule_id      TEXT,
+            category     TEXT,
+            content_type TEXT,
+            snippet      TEXT,
+            processed    BOOLEAN DEFAULT FALSE,
+            created_at   TIMESTAMP DEFAULT NOW()
+        )
+    ");
+
     // Umformulierungen
     db()->exec("
         CREATE TABLE IF NOT EXISTS reformulations (
