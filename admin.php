@@ -72,7 +72,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     if (csrf_check($_POST['csrf'] ?? null)) {
         try {
             db()->prepare("DELETE FROM rules WHERE id = :id")->execute([':id' => (int)($_POST['id'] ?? 0)]);
+            $info = 'Regel gelöscht.';
         } catch (Throwable $e) { $error = $e->getMessage(); }
+    }
+}
+
+// Regel speichern (neu oder bearbeiten)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_rule') {
+    if (!csrf_check($_POST['csrf'] ?? null)) {
+        $error = 'Ungültiges Formular (CSRF).';
+    } else {
+        $id = (int)($_POST['id'] ?? 0);
+        $rid = trim($_POST['rule_id'] ?? '');
+        if ($rid === '') {
+            $error = 'Rule-ID darf nicht leer sein.';
+        } else {
+            $params = [
+                ':rule_id'           => mb_substr($rid, 0, 120),
+                ':category'          => trim($_POST['category'] ?? ''),
+                ':description'       => trim($_POST['description'] ?? ''),
+                ':trigger_terms'     => trim($_POST['trigger_terms'] ?? ''),
+                ':example_violation' => trim($_POST['example_violation'] ?? ''),
+                ':example_ok'        => trim($_POST['example_ok'] ?? ''),
+                ':law_reference'     => trim($_POST['law_reference'] ?? ''),
+                ':active'            => isset($_POST['active']),
+            ];
+            try {
+                if ($id > 0) {
+                    $params[':id'] = $id;
+                    db()->prepare(
+                        "UPDATE rules SET rule_id=:rule_id, category=:category, description=:description,
+                            trigger_terms=:trigger_terms, example_violation=:example_violation,
+                            example_ok=:example_ok, law_reference=:law_reference, active=:active
+                         WHERE id=:id"
+                    )->execute($params);
+                    $info = 'Regel aktualisiert.';
+                } else {
+                    db()->prepare(
+                        "INSERT INTO rules (rule_id, category, description, trigger_terms, example_violation, example_ok, law_reference, active)
+                         VALUES (:rule_id, :category, :description, :trigger_terms, :example_violation, :example_ok, :law_reference, :active)
+                         ON CONFLICT (rule_id) DO UPDATE SET
+                            category=EXCLUDED.category, description=EXCLUDED.description, trigger_terms=EXCLUDED.trigger_terms,
+                            example_violation=EXCLUDED.example_violation, example_ok=EXCLUDED.example_ok,
+                            law_reference=EXCLUDED.law_reference, active=EXCLUDED.active"
+                    )->execute($params);
+                    $info = 'Regel angelegt.';
+                }
+            } catch (Throwable $e) { $error = $e->getMessage(); }
+        }
     }
 }
 
@@ -137,6 +184,47 @@ function import_rules_csv(string $path): int {
     return $count;
 }
 
+/** Rendert das Bearbeiten-Formular für eine Regel (leer = neue Regel). */
+function rule_form(array $r = []): void {
+    $g = fn(string $k) => h((string)($r[$k] ?? ''));
+    $id = (int)($r['id'] ?? 0);
+    $isNew = $id === 0;
+    $active = $isNew ? true : !empty($r['active']);
+    ?>
+    <form method="post" action="/admin.php">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="action" value="save_rule">
+      <input type="hidden" name="id" value="<?= $id ?>">
+      <div class="row">
+        <div>
+          <label>Rule-ID</label>
+          <input type="text" name="rule_id" value="<?= $g('rule_id') ?>" required placeholder="EMPCO-XXX-...">
+        </div>
+        <div>
+          <label>Kategorie</label>
+          <input type="text" name="category" value="<?= $g('category') ?>" placeholder="z. B. pauschalaussage">
+        </div>
+      </div>
+      <label>Beschreibung</label>
+      <textarea name="description" style="min-height:70px"><?= $g('description') ?></textarea>
+      <label>Trigger-Begriffe (kommagetrennt)</label>
+      <textarea name="trigger_terms" style="min-height:60px"><?= $g('trigger_terms') ?></textarea>
+      <label>Beispiel — Verstoß</label>
+      <textarea name="example_violation" style="min-height:60px"><?= $g('example_violation') ?></textarea>
+      <label>Beispiel — konform</label>
+      <textarea name="example_ok" style="min-height:60px"><?= $g('example_ok') ?></textarea>
+      <label>Rechtsbezug</label>
+      <input type="text" name="law_reference" value="<?= $g('law_reference') ?>">
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:600">
+        <input type="checkbox" name="active" value="1" <?= $active ? 'checked' : '' ?> style="width:auto"> aktiv
+      </label>
+      <div class="form-actions">
+        <button type="submit"><?= $isNew ? 'Regel anlegen' : 'Änderungen speichern' ?></button>
+      </div>
+    </form>
+    <?php
+}
+
 // Daten laden
 $rules = [];
 try {
@@ -177,31 +265,34 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
 </div>
 
 <h2><?= count($rules) ?> Regel<?= count($rules) === 1 ? '' : 'n' ?> im System</h2>
-<div class="card">
-  <?php if (!$rules): ?>
-    <p class="sub" style="margin:0">Noch keine Regeln importiert.</p>
-  <?php else: ?>
-    <table>
-      <thead><tr><th>Rule-ID</th><th>Kategorie</th><th>Trigger-Begriffe</th><th></th></tr></thead>
-      <tbody>
-        <?php foreach ($rules as $r): ?>
-          <tr>
-            <td class="mono"><?= h($r['rule_id']) ?></td>
-            <td><span class="tag"><?= h($r['category']) ?></span></td>
-            <td style="color:var(--text2)"><?= h(mb_strimwidth((string)$r['trigger_terms'], 0, 80, '…')) ?></td>
-            <td style="text-align:right">
-              <form method="post" action="/admin.php" style="margin:0" onsubmit="return confirm('Regel löschen?')">
-                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-                <input type="hidden" name="action" value="delete_rule">
-                <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-                <button type="submit" class="btn-ghost btn-sm">Löschen</button>
-              </form>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-      </tbody>
-    </table>
-  <?php endif; ?>
-</div>
+
+<details class="rule" style="margin-bottom:16px">
+  <summary><span class="tag">＋ Neue Regel anlegen</span></summary>
+  <div class="rule-body"><?php rule_form(); ?></div>
+</details>
+
+<?php if (!$rules): ?>
+  <div class="card"><p class="sub" style="margin:0">Noch keine Regeln importiert. Nutze „Regeln importieren" oder lege oben eine neue Regel an.</p></div>
+<?php else: ?>
+  <?php foreach ($rules as $r): ?>
+    <details class="rule">
+      <summary>
+        <span class="sum-id"><?= h($r['rule_id']) ?></span>
+        <span class="tag"><?= h($r['category']) ?></span>
+        <?php if (empty($r['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
+        <span class="sum-desc"><?= h($r['description']) ?></span>
+      </summary>
+      <div class="rule-body">
+        <?php rule_form($r); ?>
+        <form method="post" action="/admin.php" style="margin-top:10px" onsubmit="return confirm('Regel wirklich löschen?')">
+          <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+          <input type="hidden" name="action" value="delete_rule">
+          <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+          <button type="submit" class="btn-ghost btn-sm">Regel löschen</button>
+        </form>
+      </div>
+    </details>
+  <?php endforeach; ?>
+<?php endif; ?>
 <?php
 page_foot();
