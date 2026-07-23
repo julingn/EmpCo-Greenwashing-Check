@@ -64,6 +64,22 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
     <?php endforeach; ?>
   </div>
 
+  <div class="card" style="padding:14px 20px;font-size:13px;color:var(--text2)">
+    <strong style="color:var(--text)">Legende</strong>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">
+      <span><span class="badge violation">Verstoß</span> klar irreführend / unbelegt</span>
+      <span><span class="badge warn">Prüfen</span> kontextabhängig — manuell prüfen</span>
+      <span><span class="badge info">Hinweis</span> Trigger vorhanden, eher unkritisch</span>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:18px;flex-wrap:wrap;align-items:center">
+      <span>Prüfungen:</span>
+      <span><span class="badge ok">✓</span> durchgeführt</span>
+      <span><span class="badge skipped">–</span> nicht durchgeführt</span>
+      <span><span class="badge violation">✕</span> fehlgeschlagen</span>
+      <span style="color:var(--text3)">Aktuell: Text &amp; Code aktiv · JS &amp; OCR folgen später.</span>
+    </div>
+  </div>
+
   <h2 style="margin:24px 0 12px">
     <?= count($findings) ?> Finding<?= count($findings) === 1 ? '' : 's' ?>
   </h2>
