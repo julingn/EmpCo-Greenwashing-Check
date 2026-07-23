@@ -17,7 +17,8 @@ function call_ai(string $system, string $user): string {
 
 function call_openai(string $system, string $user): string {
     $payload = json_encode([
-        'model'    => OPENAI_MODEL,
+        'model'       => OPENAI_MODEL,
+        'temperature' => 0,
         'messages' => [
             ['role' => 'system', 'content' => $system],
             ['role' => 'user',   'content' => $user],

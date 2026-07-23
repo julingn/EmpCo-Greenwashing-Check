@@ -206,19 +206,18 @@ function build_candidates(array $rules, string $text, array $attrs): array {
     return array_slice($cands, 0, 120); // Obergrenze für KI-Aufwand
 }
 
-/** Lässt die KI jeden Kandidaten bewerten (Verstoß/Prüfen/Hinweis oder verwerfen). */
+/** Lässt die KI jeden Kandidaten bewerten. Verwirft NICHTS (deterministische Finding-Menge). */
 function ai_classify(array $candidates, array $rules): array {
     $ruleMap = [];
     foreach ($rules as $r) { $ruleMap[$r['rule_id']] = $r; }
 
     $system = "Du bist Prüf-Assistent für Greenwashing nach der EmpCo-Richtlinie (EU) 2024/825 sowie "
         . "UWG/UCPD. Du erhältst KANDIDATEN — Textstellen, in denen ein Trigger-Begriff einer Regel vorkommt. "
-        . "Beurteile JEDE Stelle im Kontext der genannten Regel. severity: 'violation' = klar irreführend/unbelegt; "
-        . "'warn' = potenziell problematisch/kontextabhängig; 'info' = Trigger vorhanden, aber eher unkritisch. "
-        . "Setze keep=false NUR, wenn die Stelle eindeutig konform ist (konkreter Beleg/Quelle/Zertifikat direkt "
-        . "dabei) ODER der Begriff hier gar keine Umweltaussage ist (Fehltreffer). Im Zweifel keep=true mit "
-        . "severity 'warn'. Antworte AUSSCHLIESSLICH als JSON-Array in Kandidaten-Reihenfolge, ohne Markdown: "
-        . "[{\"i\":0,\"keep\":true,\"severity\":\"violation\",\"assessment\":\"kurze Begründung\"}].";
+        . "Beurteile JEDE Stelle im Kontext der genannten Regel und vergib eine severity: "
+        . "'violation' = klar irreführend/unbelegt; 'warn' = potenziell problematisch/kontextabhängig; "
+        . "'info' = kein echter Umweltbezug/Fehltreffer ODER eindeutig konform (Beleg/Quelle/Zertifikat dabei). "
+        . "Verwirf nichts — jede Stelle bekommt eine severity. Antworte AUSSCHLIESSLICH als JSON-Array in "
+        . "Kandidaten-Reihenfolge, ohne Markdown: [{\"i\":0,\"severity\":\"violation\",\"assessment\":\"kurze Begründung\"}].";
 
     $out = [];
     foreach (array_chunk($candidates, 20, false) as $batch) {
@@ -230,14 +229,17 @@ function ai_classify(array $candidates, array $rules): array {
                 . "   Konform-Beispiel: " . ($r['example_ok'] ?? '') . "\n"
                 . "   Fundstelle: \"{$c['snippet']}\"\n";
         }
-        $raw = call_ai($system, "KANDIDATEN:\n{$list}");
         $byI = [];
-        foreach (parse_json_array($raw) as $v) {
-            if (isset($v['i'])) { $byI[(int)$v['i']] = $v; }
+        try {
+            $raw = call_ai($system, "KANDIDATEN:\n{$list}");
+            foreach (parse_json_array($raw) as $v) {
+                if (isset($v['i'])) { $byI[(int)$v['i']] = $v; }
+            }
+        } catch (Throwable $e) {
+            // KI-Ausfall: Kandidaten trotzdem als Findings (severity 'warn') behalten
         }
         foreach ($batch as $i => $c) {
-            $v = $byI[$i] ?? ['keep' => true, 'severity' => 'warn', 'assessment' => ''];
-            if (array_key_exists('keep', $v) && !$v['keep']) { continue; }
+            $v = $byI[$i] ?? [];
             $out[] = [
                 'rule_id'      => $c['rule_id'],
                 'category'     => $c['category'],
