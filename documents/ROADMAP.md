@@ -27,6 +27,13 @@
 ## Schritt 4 — Umformulierung
 - ⬜ Vorschläge manuell + KI, akzeptieren/verwerfen
 
+## Admin-Ausbau (geplant)
+- ⬜ **Sidebar-Navigation im Admin** — Bereiche getrennt gelistet und einzeln erreichbar
+  - ⬜ **Regeln** (Liste/Editor, Import) als eigener Menüpunkt
+  - ⬜ **KI-Redakteure** als eigener Menüpunkt — mehrere Redakteure separat gelistet & konfigurierbar (je Redakteur eigener Prompt)
+  - ⬜ ggf. weitere Bereiche (z. B. Prüf-Archiv, Einstellungen)
+- ⬜ Grundlage für mehrere spezialisierte KI-Redakteure (z. B. je Kategorie oder Tone-of-Voice)
+
 ## Später
 - ⬜ **PDF auslesen als Quelle** (statt/zusätzlich zur URL) — Upload eines PDF, Textextraktion + Prüfung wie bei URLs
 - ⬜ **Verlaufsvergleich / Trend pro URL** — jeden Prüflauf als Snapshot im Archiv; bei erneuter Prüfung derselben URL Findings gegen früheren Lauf matchen (Schlüssel: rule_id + normalisierter Ausschnitt) → **behoben / neu / unverändert** + Trend (Verbesserung/Verschlechterung vs. Datum). Ziel: nach Seitenüberarbeitung positive/negative Entwicklung sichtbar machen.
