@@ -1,0 +1,3 @@
+# EmpCo
+
+Arbeitstitel — Projektbeschreibung folgt.
