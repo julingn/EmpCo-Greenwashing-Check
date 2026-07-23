@@ -85,17 +85,23 @@ function page_head(string $title, string $active = ''): void {
   .count-pill{display:inline-block;background:var(--accent-bg);color:var(--accent);
         border-radius:999px;padding:4px 12px;font-size:13px;font-weight:700}
   code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
-  details.rule{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;background:#fff}
-  details.rule>summary{cursor:pointer;padding:12px 14px;display:flex;gap:10px;align-items:center;
-        list-style:none;font-size:14px}
+  details.rule{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
+        box-shadow:var(--shadow-sm);margin-bottom:10px;overflow:hidden;
+        transition:box-shadow .15s,border-color .15s}
+  details.rule:hover{box-shadow:var(--shadow);border-color:var(--border2)}
+  details.rule>summary{list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;
+        gap:14px;padding:16px 20px}
   details.rule>summary::-webkit-details-marker{display:none}
-  details.rule>summary::before{content:'▸';color:var(--text3);font-size:12px}
-  details.rule[open]>summary::before{content:'▾'}
+  details.rule>summary:hover .sum-id{color:var(--accent)}
   details.rule[open]>summary{border-bottom:1px solid var(--border)}
-  details.rule .rule-body{padding:6px 16px 18px}
+  details.rule .rule-body{padding:14px 20px 20px}
   details.rule .rule-body label{margin-top:12px}
-  .sum-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600}
-  .sum-desc{color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sum-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;font-size:13px;
+        flex-shrink:0;transition:color .12s}
+  .sum-desc{color:var(--text2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+        white-space:nowrap;font-size:13px}
+  .sum-chevron{margin-left:auto;flex-shrink:0;color:var(--text3);transition:transform .2s}
+  details.rule[open]>summary .sum-chevron{transform:rotate(180deg)}
   .form-actions{display:flex;gap:8px;align-items:center;margin-top:16px}
   .form-actions button{margin-top:0}
 </style>

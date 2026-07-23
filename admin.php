@@ -346,7 +346,9 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
 <h2><?= count($rules) ?> Regel<?= count($rules) === 1 ? '' : 'n' ?> im System</h2>
 
 <details class="rule" style="margin-bottom:16px">
-  <summary><span class="tag">＋ Neue Regel anlegen</span></summary>
+  <summary><span class="tag">＋ Neue Regel anlegen</span>
+    <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+  </summary>
   <div class="rule-body"><?php rule_form(); ?></div>
 </details>
 
@@ -360,6 +362,7 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
         <span class="tag"><?= h($r['category']) ?></span>
         <?php if (empty($r['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
         <span class="sum-desc"><?= h($r['description']) ?></span>
+        <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
       </summary>
       <div class="rule-body">
         <?php rule_form($r); ?>
