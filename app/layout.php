@@ -111,6 +111,14 @@ function page_head(string $title, string $active = ''): void {
   details.rule[open]>summary .sum-chevron{transform:rotate(180deg)}
   .form-actions{display:flex;gap:8px;align-items:center;margin-top:16px}
   .form-actions button{margin-top:0}
+  .admin-layout{display:grid;grid-template-columns:210px 1fr;gap:28px;align-items:start}
+  @media(max-width:720px){.admin-layout{grid-template-columns:1fr}}
+  .admin-nav{display:flex;flex-direction:column;gap:4px;position:sticky;top:24px}
+  .admin-nav a{display:block;padding:10px 14px;border-radius:var(--radius);color:var(--text2);
+        text-decoration:none;font-size:14px;font-weight:600}
+  .admin-nav a:hover{background:var(--accent-bg);color:var(--accent)}
+  .admin-nav a.active{background:var(--accent-bg);color:var(--accent)}
+  .admin-content{min-width:0}
 </style>
 </head>
 <body>

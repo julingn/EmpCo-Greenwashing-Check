@@ -1,5 +1,5 @@
 <?php
-// EmpCo Greenwashing-Check — Admin (Regeln verwalten + Import, KI-Redakteur-Prompt)
+// EmpCo Greenwashing-Check — Admin (Sidebar: Regeln + KI-Redakteure)
 require __DIR__ . '/app/config.php';
 require __DIR__ . '/app/db.php';
 require __DIR__ . '/app/layout.php';
@@ -31,7 +31,7 @@ if (empty($_SESSION['admin'])) {
     page_head('Admin-Login — EmpCo');
     ?>
     <h1>Admin-Login</h1>
-    <p class="sub">Bitte anmelden, um Regeln und Einstellungen zu verwalten.</p>
+    <p class="sub">Bitte anmelden, um Regeln und KI-Redakteure zu verwalten.</p>
     <?php if ($loginError): ?><div class="alert err"><?= h($loginError) ?></div><?php endif; ?>
     <div class="card">
       <form method="post" action="/admin.php">
@@ -47,6 +47,7 @@ if (empty($_SESSION['admin'])) {
 }
 
 // --- Eingeloggt ---
+$section = in_array($_GET['section'] ?? '', ['rules', 'agents'], true) ? $_GET['section'] : 'rules';
 $error = '';
 $info = '';
 try {
@@ -55,14 +56,23 @@ try {
     $error = $e->getMessage();
 }
 
-// KI-Redakteur-Prompt speichern
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_prompt') {
+// ===== POST-Handler =====
+
+// Regeln importieren (CSV/xlsx)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import_rules') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $error = 'Ungültiges Formular (CSRF).';
+    } elseif (empty($_FILES['rulefile']['tmp_name']) || !is_uploaded_file($_FILES['rulefile']['tmp_name'])) {
+        $error = 'Keine Datei hochgeladen.';
     } else {
         try {
-            setting_set('editor_prompt', trim($_POST['editor_prompt'] ?? ''));
-            $info = 'KI-Redakteur-Prompt gespeichert.';
+            $name = $_FILES['rulefile']['name'] ?? '';
+            $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+            $rows = $ext === 'xlsx'
+                ? parse_xlsx_rows($_FILES['rulefile']['tmp_name'])
+                : parse_csv_rows($_FILES['rulefile']['tmp_name']);
+            $imported = upsert_rules($rows);
+            $info = "$imported Regel(n) importiert/aktualisiert.";
         } catch (Throwable $e) { $error = $e->getMessage(); }
     }
 }
@@ -77,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     }
 }
 
-// Regel speichern (neu oder bearbeiten)
+// Regel speichern (neu/bearbeiten)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_rule') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $error = 'Ungültiges Formular (CSRF).';
@@ -123,54 +133,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     }
 }
 
-// Regeln importieren (CSV- oder xlsx-Upload)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import_rules') {
+// KI-Redakteur speichern (neu/bearbeiten)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_agent') {
+    $section = 'agents';
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $error = 'Ungültiges Formular (CSRF).';
-    } elseif (empty($_FILES['rulefile']['tmp_name']) || !is_uploaded_file($_FILES['rulefile']['tmp_name'])) {
-        $error = 'Keine Datei hochgeladen.';
     } else {
+        $id = (int)($_POST['id'] ?? 0);
+        $name = trim($_POST['name'] ?? '');
+        $key = trim($_POST['agent_key'] ?? '');
+        if ($name === '') {
+            $error = 'Name darf nicht leer sein.';
+        } else {
+            try {
+                if ($id > 0) {
+                    db()->prepare(
+                        "UPDATE agents SET name=:n, description=:d, prompt=:p, active=:a WHERE id=:id"
+                    )->execute([
+                        ':n' => mb_substr($name, 0, 120),
+                        ':d' => trim($_POST['description'] ?? ''),
+                        ':p' => trim($_POST['prompt'] ?? ''),
+                        ':a' => isset($_POST['active']),
+                        ':id' => $id,
+                    ]);
+                    $info = 'Redakteur aktualisiert.';
+                } else {
+                    if ($key === '') { $key = 'agent_' . substr(bin2hex(random_bytes(4)), 0, 8); }
+                    db()->prepare(
+                        "INSERT INTO agents (agent_key, name, description, prompt, active)
+                         VALUES (:k, :n, :d, :p, :a)"
+                    )->execute([
+                        ':k' => preg_replace('/[^a-z0-9_]/', '', strtolower($key)),
+                        ':n' => mb_substr($name, 0, 120),
+                        ':d' => trim($_POST['description'] ?? ''),
+                        ':p' => trim($_POST['prompt'] ?? ''),
+                        ':a' => isset($_POST['active']),
+                    ]);
+                    $info = 'Redakteur angelegt.';
+                }
+            } catch (Throwable $e) { $error = $e->getMessage(); }
+        }
+    }
+}
+
+// KI-Redakteur löschen (Standard-Redakteur bleibt geschützt)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_agent') {
+    $section = 'agents';
+    if (csrf_check($_POST['csrf'] ?? null)) {
         try {
-            $name = $_FILES['rulefile']['name'] ?? '';
-            $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-            $rows = $ext === 'xlsx'
-                ? parse_xlsx_rows($_FILES['rulefile']['tmp_name'])
-                : parse_csv_rows($_FILES['rulefile']['tmp_name']);
-            $imported = upsert_rules($rows);
-            $info = "$imported Regel(n) importiert/aktualisiert.";
+            db()->prepare("DELETE FROM agents WHERE id = :id AND agent_key <> 'reformulator'")
+                ->execute([':id' => (int)($_POST['id'] ?? 0)]);
+            $info = 'Redakteur gelöscht.';
         } catch (Throwable $e) { $error = $e->getMessage(); }
     }
 }
 
-/** Liest eine CSV und liefert assoziative Zeilen (Header-Spalten als Schlüssel). */
+// ===== Import-Parser =====
 function parse_csv_rows(string $path): array {
     $raw = file_get_contents($path);
     if ($raw === false || $raw === '') { throw new RuntimeException('CSV ist leer.'); }
-    $raw = preg_replace('/^\xEF\xBB\xBF/', '', $raw); // BOM entfernen
+    $raw = preg_replace('/^\xEF\xBB\xBF/', '', $raw);
     $firstLine = strtok($raw, "\r\n");
     $delim = (substr_count($firstLine, ';') > substr_count($firstLine, ',')) ? ';' : ',';
-
     $fh = fopen('php://temp', 'r+');
     fwrite($fh, $raw);
     rewind($fh);
-
     $header = fgetcsv($fh, 0, $delim);
     if (!$header) { throw new RuntimeException('CSV-Kopfzeile fehlt.'); }
     $header = array_map(fn($h) => strtolower(trim((string)$h)), $header);
-
     $rows = [];
     while (($row = fgetcsv($fh, 0, $delim)) !== false) {
         $assoc = [];
-        foreach ($header as $i => $col) {
-            $assoc[$col] = isset($row[$i]) ? trim((string)$row[$i]) : '';
-        }
+        foreach ($header as $i => $col) { $assoc[$col] = isset($row[$i]) ? trim((string)$row[$i]) : ''; }
         $rows[] = $assoc;
     }
     fclose($fh);
     return $rows;
 }
 
-/** Liest eine xlsx (erstes Blatt) und liefert assoziative Zeilen (Header-Spalten als Schlüssel). */
 function parse_xlsx_rows(string $path): array {
     if (!class_exists('ZipArchive')) {
         throw new RuntimeException('ZIP-Extension fehlt (xlsx nicht lesbar). CSV nutzen oder Deploy abwarten.');
@@ -181,8 +221,6 @@ function parse_xlsx_rows(string $path): array {
     $sheetRaw  = $zip->getFromName('xl/worksheets/sheet1.xml');
     $zip->close();
     if ($sheetRaw === false) { throw new RuntimeException('Kein Tabellenblatt in der xlsx gefunden.'); }
-
-    // Shared Strings
     $shared = [];
     if ($sharedRaw !== false && $sharedRaw !== '') {
         $d = new DOMDocument();
@@ -193,8 +231,6 @@ function parse_xlsx_rows(string $path): array {
             $shared[] = $txt;
         }
     }
-
-    // Zeilen/Zellen
     $d = new DOMDocument();
     @$d->loadXML($sheetRaw);
     $grid = [];
@@ -217,8 +253,6 @@ function parse_xlsx_rows(string $path): array {
         $grid[] = $cells;
     }
     if (!$grid) { return []; }
-
-    // Header (erste Zeile) -> Spaltenbuchstabe => Spaltenname
     $headerRow = array_shift($grid);
     $map = [];
     foreach ($headerRow as $letter => $name) {
@@ -228,15 +262,12 @@ function parse_xlsx_rows(string $path): array {
     $rows = [];
     foreach ($grid as $cells) {
         $assoc = [];
-        foreach ($map as $letter => $name) {
-            $assoc[$name] = $cells[$letter] ?? '';
-        }
+        foreach ($map as $letter => $name) { $assoc[$name] = $cells[$letter] ?? ''; }
         $rows[] = $assoc;
     }
     return $rows;
 }
 
-/** Upsertet Regelzeilen (assoziativ, Schlüssel = Spaltennamen) in die DB. */
 function upsert_rules(array $rows): int {
     $stmt = db()->prepare(
         "INSERT INTO rules (rule_id, category, description, trigger_terms, example_violation, example_ok, law_reference, active)
@@ -263,14 +294,14 @@ function upsert_rules(array $rows): int {
     return $count;
 }
 
-/** Rendert das Bearbeiten-Formular für eine Regel (leer = neue Regel). */
+/** Bearbeiten-Formular für eine Regel (leer = neue Regel). */
 function rule_form(array $r = []): void {
     $g = fn(string $k) => h((string)($r[$k] ?? ''));
     $id = (int)($r['id'] ?? 0);
     $isNew = $id === 0;
     $active = $isNew ? true : !empty($r['active']);
     ?>
-    <form method="post" action="/admin.php">
+    <form method="post" action="/admin.php?section=rules">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="save_rule">
       <input type="hidden" name="id" value="<?= $id ?>">
@@ -304,10 +335,47 @@ function rule_form(array $r = []): void {
     <?php
 }
 
-// Daten laden
+/** Bearbeiten-Formular für einen KI-Redakteur (leer = neuer Redakteur). */
+function agent_form(array $a = []): void {
+    $g = fn(string $k) => h((string)($a[$k] ?? ''));
+    $id = (int)($a['id'] ?? 0);
+    $isNew = $id === 0;
+    $active = $isNew ? true : !empty($a['active']);
+    ?>
+    <form method="post" action="/admin.php?section=agents">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="action" value="save_agent">
+      <input type="hidden" name="id" value="<?= $id ?>">
+      <div class="row">
+        <div>
+          <label>Name</label>
+          <input type="text" name="name" value="<?= $g('name') ?>" required placeholder="z. B. Tone-of-Voice-Redakteur">
+        </div>
+        <div>
+          <label>Schlüssel (technisch)<?= $isNew ? '' : ' — fest' ?></label>
+          <input type="text" <?= $isNew ? 'name="agent_key"' : 'disabled' ?> value="<?= $g('agent_key') ?>" placeholder="automatisch">
+        </div>
+      </div>
+      <label>Beschreibung</label>
+      <input type="text" name="description" value="<?= $g('description') ?>">
+      <label>Prompt</label>
+      <textarea name="prompt" style="min-height:180px"><?= $g('prompt') ?></textarea>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:600">
+        <input type="checkbox" name="active" value="1" <?= $active ? 'checked' : '' ?> style="width:auto"> aktiv
+      </label>
+      <div class="form-actions">
+        <button type="submit"><?= $isNew ? 'Redakteur anlegen' : 'Änderungen speichern' ?></button>
+      </div>
+    </form>
+    <?php
+}
+
+// ===== Daten laden =====
 $rules = [];
+$agents = [];
 try {
     $rules = db()->query("SELECT * FROM rules ORDER BY rule_id")->fetchAll();
+    $agents = get_agents();
 } catch (Throwable $e) { if (!$error) { $error = $e->getMessage(); } }
 
 page_head('Admin — EmpCo Greenwashing-Check', 'admin');
@@ -316,65 +384,101 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
   <h1 style="margin:0">Admin-Bereich</h1>
   <a href="/admin.php?logout=1" style="color:var(--text2);font-size:14px">Abmelden</a>
 </div>
-<p class="sub">Regelset verwalten und KI-Redakteur konfigurieren.</p>
+<p class="sub">Verwaltung von Regelset und KI-Redakteuren.</p>
 
 <?php if ($error): ?><div class="alert err"><?= h($error) ?></div><?php endif; ?>
 <?php if ($info): ?><div class="alert ok"><?= h($info) ?></div><?php endif; ?>
 
-<h2>Regeln importieren</h2>
-<div class="card">
-  <p class="hint" style="margin-top:0">Datei (<code>.xlsx</code> oder <code>.csv</code>) mit Spalten: <code>rule_id, category, description, trigger_terms, example_violation, example_ok, law_reference</code>. Bestehende Regeln (gleiche <code>rule_id</code>) werden aktualisiert.</p>
-  <form method="post" action="/admin.php" enctype="multipart/form-data">
-    <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-    <input type="hidden" name="action" value="import_rules">
-    <input type="file" name="rulefile" accept=".csv,.xlsx" required style="margin-top:8px">
-    <button type="submit">Importieren</button>
-  </form>
-</div>
+<div class="admin-layout">
+  <nav class="admin-nav">
+    <a href="/admin.php?section=rules" class="<?= $section === 'rules' ? 'active' : '' ?>">Regeln (<?= count($rules) ?>)</a>
+    <a href="/admin.php?section=agents" class="<?= $section === 'agents' ? 'active' : '' ?>">KI-Redakteure (<?= count($agents) ?>)</a>
+  </nav>
 
-<h2>KI-Redakteur — Prompt</h2>
-<div class="card">
-  <form method="post" action="/admin.php">
-    <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-    <input type="hidden" name="action" value="save_prompt">
-    <textarea name="editor_prompt" style="min-height:180px"><?= h(editor_prompt()) ?></textarea>
-    <div class="hint">Dieser Prompt steuert die KI-basierte Umformulierung (Stufe 3).</div>
-    <button type="submit">Prompt speichern</button>
-  </form>
-</div>
+  <div class="admin-content">
+    <?php if ($section === 'rules'): ?>
 
-<h2><?= count($rules) ?> Regel<?= count($rules) === 1 ? '' : 'n' ?> im System</h2>
-
-<details class="rule" style="margin-bottom:16px">
-  <summary><span class="tag">＋ Neue Regel anlegen</span>
-    <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-  </summary>
-  <div class="rule-body"><?php rule_form(); ?></div>
-</details>
-
-<?php if (!$rules): ?>
-  <div class="card"><p class="sub" style="margin:0">Noch keine Regeln importiert. Nutze „Regeln importieren" oder lege oben eine neue Regel an.</p></div>
-<?php else: ?>
-  <?php foreach ($rules as $r): ?>
-    <details class="rule">
-      <summary>
-        <span class="sum-id"><?= h($r['rule_id']) ?></span>
-        <span class="tag"><?= h($r['category']) ?></span>
-        <?php if (empty($r['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
-        <span class="sum-desc"><?= h($r['description']) ?></span>
-        <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-      </summary>
-      <div class="rule-body">
-        <?php rule_form($r); ?>
-        <form method="post" action="/admin.php" style="margin-top:10px" onsubmit="return confirm('Regel wirklich löschen?')">
+      <h2 style="margin-top:0">Regeln importieren</h2>
+      <div class="card">
+        <p class="hint" style="margin-top:0">Datei (<code>.xlsx</code> oder <code>.csv</code>) mit Spalten: <code>rule_id, category, description, trigger_terms, example_violation, example_ok, law_reference</code>. Bestehende Regeln (gleiche <code>rule_id</code>) werden aktualisiert.</p>
+        <form method="post" action="/admin.php?section=rules" enctype="multipart/form-data">
           <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-          <input type="hidden" name="action" value="delete_rule">
-          <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-          <button type="submit" class="btn-ghost btn-sm">Regel löschen</button>
+          <input type="hidden" name="action" value="import_rules">
+          <input type="file" name="rulefile" accept=".csv,.xlsx" required style="margin-top:8px">
+          <button type="submit">Importieren</button>
         </form>
       </div>
-    </details>
-  <?php endforeach; ?>
-<?php endif; ?>
+
+      <h2><?= count($rules) ?> Regel<?= count($rules) === 1 ? '' : 'n' ?></h2>
+      <details class="rule" style="margin-bottom:16px">
+        <summary><span class="tag">＋ Neue Regel anlegen</span>
+          <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="rule-body"><?php rule_form(); ?></div>
+      </details>
+      <?php if (!$rules): ?>
+        <div class="card"><p class="sub" style="margin:0">Noch keine Regeln importiert.</p></div>
+      <?php else: ?>
+        <?php foreach ($rules as $r): ?>
+          <details class="rule">
+            <summary>
+              <span class="sum-id"><?= h($r['rule_id']) ?></span>
+              <span class="tag"><?= h($r['category']) ?></span>
+              <?php if (empty($r['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
+              <span class="sum-desc"><?= h($r['description']) ?></span>
+              <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="rule-body">
+              <?php rule_form($r); ?>
+              <form method="post" action="/admin.php?section=rules" style="margin-top:10px" onsubmit="return confirm('Regel wirklich löschen?')">
+                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+                <input type="hidden" name="action" value="delete_rule">
+                <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+                <button type="submit" class="btn-ghost btn-sm">Regel löschen</button>
+              </form>
+            </div>
+          </details>
+        <?php endforeach; ?>
+      <?php endif; ?>
+
+    <?php else: ?>
+
+      <h2 style="margin-top:0">KI-Redakteure</h2>
+      <p class="hint" style="margin-top:0">Jeder Redakteur hat einen eigenen Prompt. Der <strong>Umformulierungs-Redakteur</strong> steuert die konforme Neuformulierung (Stufe 3). Weitere Redakteure (z. B. Tone of Voice) können ergänzt werden.</p>
+
+      <details class="rule" style="margin:12px 0 16px">
+        <summary><span class="tag">＋ Neuer Redakteur</span>
+          <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="rule-body"><?php agent_form(); ?></div>
+      </details>
+
+      <?php foreach ($agents as $a): ?>
+        <details class="rule">
+          <summary>
+            <span class="sum-id"><?= h($a['name']) ?></span>
+            <?php if (empty($a['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
+            <span class="sum-desc"><?= h($a['description']) ?></span>
+            <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="rule-body">
+            <?php agent_form($a); ?>
+            <?php if ($a['agent_key'] !== 'reformulator'): ?>
+              <form method="post" action="/admin.php?section=agents" style="margin-top:10px" onsubmit="return confirm('Redakteur wirklich löschen?')">
+                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+                <input type="hidden" name="action" value="delete_agent">
+                <input type="hidden" name="id" value="<?= (int)$a['id'] ?>">
+                <button type="submit" class="btn-ghost btn-sm">Redakteur löschen</button>
+              </form>
+            <?php else: ?>
+              <p class="hint" style="margin-top:10px">Standard-Redakteur — nicht löschbar.</p>
+            <?php endif; ?>
+          </div>
+        </details>
+      <?php endforeach; ?>
+
+    <?php endif; ?>
+  </div>
+</div>
 <?php
 page_foot();

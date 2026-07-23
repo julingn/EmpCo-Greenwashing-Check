@@ -132,7 +132,7 @@ function db_init(): void {
         )
     ");
 
-    // Einstellungen (z. B. editierbarer Agent-Prompt)
+    // Einstellungen (z. B. Alt-Werte)
     db()->exec("
         CREATE TABLE IF NOT EXISTS settings (
             key        TEXT PRIMARY KEY,
@@ -140,6 +140,34 @@ function db_init(): void {
             updated_at TIMESTAMP DEFAULT NOW()
         )
     ");
+
+    // KI-Redakteure (mehrere Agenten, je eigener Prompt)
+    db()->exec("
+        CREATE TABLE IF NOT EXISTS agents (
+            id          SERIAL PRIMARY KEY,
+            agent_key   TEXT UNIQUE NOT NULL,
+            name        TEXT NOT NULL,
+            description TEXT,
+            prompt      TEXT,
+            active      BOOLEAN DEFAULT TRUE,
+            created_at  TIMESTAMP DEFAULT NOW()
+        )
+    ");
+
+    // Standard-Redakteur einmalig anlegen (übernimmt ggf. alten settings-Prompt)
+    $hasAgents = (int) db()->query("SELECT COUNT(*) FROM agents")->fetchColumn();
+    if ($hasAgents === 0) {
+        $existing = setting_get('editor_prompt', '');
+        $prompt = $existing !== '' ? $existing : DEFAULT_EDITOR_PROMPT;
+        db()->prepare(
+            "INSERT INTO agents (agent_key, name, description, prompt)
+             VALUES ('reformulator', :n, :d, :p)"
+        )->execute([
+            ':n' => 'Umformulierungs-Redakteur',
+            ':d' => 'Formuliert beanstandete Textstellen EmpCo-konform um (Stufe 3).',
+            ':p' => $prompt,
+        ]);
+    }
 }
 
 /** Liest einen Einstellungswert (mit Default). */
@@ -159,8 +187,18 @@ function setting_set(string $key, string $value): void {
     $stmt->execute([':k' => $key, ':v' => $value]);
 }
 
-/** Aktueller Redakteur-Prompt (DB-Override oder Default). */
+/** Aktueller Redakteur-Prompt des Umformulierungs-Redakteurs (DB oder Default). */
 function editor_prompt(): string {
-    $p = setting_get('editor_prompt', '');
-    return $p !== '' ? $p : DEFAULT_EDITOR_PROMPT;
+    try {
+        $stmt = db()->prepare("SELECT prompt FROM agents WHERE agent_key = 'reformulator' AND active LIMIT 1");
+        $stmt->execute();
+        $p = $stmt->fetchColumn();
+        if ($p !== false && (string)$p !== '') { return (string)$p; }
+    } catch (Throwable $e) { /* Fallback unten */ }
+    return DEFAULT_EDITOR_PROMPT;
+}
+
+/** Liefert alle KI-Redakteure. */
+function get_agents(): array {
+    return db()->query("SELECT * FROM agents ORDER BY id")->fetchAll();
 }
