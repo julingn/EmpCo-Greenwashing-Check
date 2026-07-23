@@ -70,33 +70,29 @@ function run_analysis(int $analysisId, string $url): array {
     // js/ocr bleiben 'skipped' (folgt in späterem Schritt)
 
     $rules = db()->query("SELECT * FROM rules WHERE active ORDER BY rule_id")->fetchAll();
-    $haystack = $content['text'] . ' ' . implode(' ', $content['attrs']);
-    $candidates = candidate_rules($rules, $haystack);
-
     $pageId = save_page($analysisId, $url, $checks);
+
+    // Kandidaten deterministisch aus Trigger-Treffern bilden (jede Fundstelle wird geprüft)
+    $candidates = build_candidates($rules, $content['text'], $content['attrs']);
 
     $count = 0;
     if ($candidates) {
         try {
-            $findings = ai_findings($content, $candidates);
-            $ruleMap = [];
-            foreach ($candidates as $r) { $ruleMap[$r['rule_id']] = $r; }
+            $classified = ai_classify($candidates, $rules);
             $stmt = db()->prepare(
                 "INSERT INTO findings (analysis_id, page_id, rule_id, category, content_type, snippet, assessment, severity, status)
                  VALUES (:a, :p, :rid, :cat, :ct, :snip, :ass, :sev, 'open')"
             );
-            foreach ($findings as $f) {
-                $rid = (string)($f['rule_id'] ?? '');
-                if ($rid === '' || !isset($ruleMap[$rid])) { continue; }
+            foreach ($classified as $f) {
                 $stmt->execute([
                     ':a'   => $analysisId,
                     ':p'   => $pageId,
-                    ':rid' => $rid,
-                    ':cat' => $ruleMap[$rid]['category'] ?? '',
-                    ':ct'  => in_array($f['content_type'] ?? '', ['text','tooltip','image','code','footnote'], true) ? $f['content_type'] : 'text',
-                    ':snip'=> mb_substr((string)($f['snippet'] ?? ''), 0, 1000),
-                    ':ass' => mb_substr((string)($f['assessment'] ?? ''), 0, 1000),
-                    ':sev' => in_array($f['severity'] ?? '', ['violation','warn','info'], true) ? $f['severity'] : 'violation',
+                    ':rid' => $f['rule_id'],
+                    ':cat' => $f['category'],
+                    ':ct'  => $f['content_type'],
+                    ':snip'=> mb_substr($f['snippet'], 0, 1000),
+                    ':ass' => mb_substr($f['assessment'], 0, 1000),
+                    ':sev' => $f['severity'],
                 ]);
                 $count++;
             }
@@ -118,30 +114,92 @@ function save_page(int $analysisId, string $url, array $checks): int {
     return (int) $stmt->fetchColumn();
 }
 
-/** Fragt die KI nach konkreten Verstößen. Liefert Array von Findings. */
-function ai_findings(array $content, array $candidates): array {
-    $rulesText = '';
-    foreach ($candidates as $r) {
-        $rulesText .= "- {$r['rule_id']} [{$r['category']}]: {$r['description']}\n"
-            . "  Trigger: {$r['trigger_terms']}\n"
-            . "  Verstoß-Beispiel: {$r['example_violation']}\n";
+/** Zerlegt Text in Sätze/Zeilen als Prüf-Einheiten. */
+function split_units(string $text): array {
+    $parts = preg_split('/(?<=[.!?…])\s+|\r?\n+/u', $text) ?: [$text];
+    $out = [];
+    foreach ($parts as $p) {
+        $p = trim($p);
+        if ($p !== '') { $out[] = $p; }
     }
-    $text  = mb_substr($content['text'], 0, 12000);
-    $attrs = mb_substr(implode(' | ', $content['attrs']), 0, 2000);
+    return $out;
+}
 
-    $system = "Du bist ein Prüf-Assistent für Greenwashing nach der EmpCo-Richtlinie (EU) 2024/825 "
-        . "sowie UWG/UCPD. Du erhältst Website-Inhalte und eine Liste von Regeln. Finde konkrete "
-        . "Textstellen, die tatsächlich gegen eine Regel verstoßen. Melde NUR echte, belegbare Verstöße "
-        . "(keine erfundenen, keine bereits belegten/konformen Aussagen). Zitiere die EXAKTE Fundstelle. "
-        . "Antworte AUSSCHLIESSLICH als gültiges JSON-Array, ohne Markdown, im Format: "
-        . "[{\"rule_id\":\"EMPCO-...\",\"snippet\":\"exaktes Zitat\",\"content_type\":\"text|tooltip|image|code|footnote\","
-        . "\"severity\":\"violation|warn|info\",\"assessment\":\"kurze Begründung\"}]. "
-        . "Wenn nichts zu beanstanden ist: [].";
+/** Bildet Kandidaten: jede Text-/Attribut-Stelle mit einem Trigger-Begriff. */
+function build_candidates(array $rules, string $text, array $attrs): array {
+    $units = [];
+    foreach (split_units($text) as $s) { $units[] = ['t' => $s, 'ct' => 'text']; }
+    foreach ($attrs as $a) { $a = trim($a); if ($a !== '') { $units[] = ['t' => $a, 'ct' => 'tooltip']; } }
 
-    $user = "REGELN:\n{$rulesText}\n\nSICHTBARER TEXT:\n{$text}\n\nATTRIBUTE (Tooltips/Alt-Texte):\n{$attrs}";
+    $cands = [];
+    $seen = [];
+    foreach ($rules as $r) {
+        $terms = array_filter(array_map('trim', explode(',', (string)$r['trigger_terms'])));
+        foreach ($units as $u) {
+            foreach ($terms as $term) {
+                if ($term === '') { continue; }
+                if (mb_stripos($u['t'], $term) !== false) {
+                    $snippet = mb_substr($u['t'], 0, 400);
+                    $key = mb_strtolower($r['rule_id'] . '|' . preg_replace('/\s+/u', ' ', $snippet));
+                    if (isset($seen[$key])) { break; }
+                    $seen[$key] = true;
+                    $cands[] = [
+                        'rule_id'      => $r['rule_id'],
+                        'category'     => $r['category'],
+                        'content_type' => $u['ct'],
+                        'snippet'      => $snippet,
+                    ];
+                    break; // ein Kandidat je (Regel, Einheit)
+                }
+            }
+        }
+    }
+    return array_slice($cands, 0, 120); // Obergrenze für KI-Aufwand
+}
 
-    $raw = call_ai($system, $user);
-    return parse_json_array($raw);
+/** Lässt die KI jeden Kandidaten bewerten (Verstoß/Prüfen/Hinweis oder verwerfen). */
+function ai_classify(array $candidates, array $rules): array {
+    $ruleMap = [];
+    foreach ($rules as $r) { $ruleMap[$r['rule_id']] = $r; }
+
+    $system = "Du bist Prüf-Assistent für Greenwashing nach der EmpCo-Richtlinie (EU) 2024/825 sowie "
+        . "UWG/UCPD. Du erhältst KANDIDATEN — Textstellen, in denen ein Trigger-Begriff einer Regel vorkommt. "
+        . "Beurteile JEDE Stelle im Kontext der genannten Regel. severity: 'violation' = klar irreführend/unbelegt; "
+        . "'warn' = potenziell problematisch/kontextabhängig; 'info' = Trigger vorhanden, aber eher unkritisch. "
+        . "Setze keep=false NUR, wenn die Stelle eindeutig konform ist (konkreter Beleg/Quelle/Zertifikat direkt "
+        . "dabei) ODER der Begriff hier gar keine Umweltaussage ist (Fehltreffer). Im Zweifel keep=true mit "
+        . "severity 'warn'. Antworte AUSSCHLIESSLICH als JSON-Array in Kandidaten-Reihenfolge, ohne Markdown: "
+        . "[{\"i\":0,\"keep\":true,\"severity\":\"violation\",\"assessment\":\"kurze Begründung\"}].";
+
+    $out = [];
+    foreach (array_chunk($candidates, 20, false) as $batch) {
+        $list = '';
+        foreach ($batch as $i => $c) {
+            $r = $ruleMap[$c['rule_id']] ?? [];
+            $list .= "#{$i} Regel {$c['rule_id']} [{$c['category']}]: " . ($r['description'] ?? '') . "\n"
+                . "   Verstoß-Beispiel: " . ($r['example_violation'] ?? '') . "\n"
+                . "   Konform-Beispiel: " . ($r['example_ok'] ?? '') . "\n"
+                . "   Fundstelle: \"{$c['snippet']}\"\n";
+        }
+        $raw = call_ai($system, "KANDIDATEN:\n{$list}");
+        $byI = [];
+        foreach (parse_json_array($raw) as $v) {
+            if (isset($v['i'])) { $byI[(int)$v['i']] = $v; }
+        }
+        foreach ($batch as $i => $c) {
+            $v = $byI[$i] ?? ['keep' => true, 'severity' => 'warn', 'assessment' => ''];
+            if (array_key_exists('keep', $v) && !$v['keep']) { continue; }
+            $out[] = [
+                'rule_id'      => $c['rule_id'],
+                'category'     => $c['category'],
+                'content_type' => $c['content_type'],
+                'snippet'      => $c['snippet'],
+                'assessment'   => (string)($v['assessment'] ?? ''),
+                'severity'     => in_array($v['severity'] ?? '', ['violation', 'warn', 'info'], true) ? $v['severity'] : 'warn',
+            ];
+        }
+    }
+    return $out;
 }
 
 /** Robustes Parsen eines JSON-Arrays aus einer KI-Antwort. */
