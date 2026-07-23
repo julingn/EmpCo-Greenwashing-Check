@@ -29,6 +29,7 @@
 
 ## Später
 - ⬜ **PDF auslesen als Quelle** (statt/zusätzlich zur URL) — Upload eines PDF, Textextraktion + Prüfung wie bei URLs
+- ⬜ **Verlaufsvergleich / Trend pro URL** — jeden Prüflauf als Snapshot im Archiv; bei erneuter Prüfung derselben URL Findings gegen früheren Lauf matchen (Schlüssel: rule_id + normalisierter Ausschnitt) → **behoben / neu / unverändert** + Trend (Verbesserung/Verschlechterung vs. Datum). Ziel: nach Seitenüberarbeitung positive/negative Entwicklung sichtbar machen.
 - ⬜ Bilder/OCR (Umweltaussagen/Siegel in Grafiken)
 - ⬜ TLD-Crawl (Tiefe 1/2/ganze Domain)
 - ⬜ Stufe 3b: Tone-of-Voice-Agenten nach der Umformulierung
