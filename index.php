@@ -67,11 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
         $language = in_array($_POST['language'] ?? '', ['auto', 'de', 'en'], true) ? $_POST['language'] : 'auto';
         if ($url === '') {
             $error = 'Bitte eine URL angeben.';
+        } elseif (!filter_var($url, FILTER_VALIDATE_URL)) {
+            $error = 'Bitte eine gültige URL angeben (inkl. https://).';
         } else {
             try {
+                require_once __DIR__ . '/app/analyzer.php';
+                set_time_limit(0);
                 $stmt = db()->prepare(
                     "INSERT INTO analyses (source_type, source_ref, scope, language, status)
-                     VALUES (:t, :r, :s, :l, 'pending') RETURNING id"
+                     VALUES (:t, :r, :s, :l, 'running') RETURNING id"
                 );
                 $stmt->execute([
                     ':t' => $scope === 'exact' ? 'url' : 'tld',
@@ -80,7 +84,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
                     ':l' => $language,
                 ]);
                 $id = (int) $stmt->fetchColumn();
-                $info = 'Prüflauf #' . $id . ' angelegt. Die Analyse-Engine wird im nächsten Schritt aktiviert.';
+                run_analysis($id, $url);
+                header('Location: /results.php?id=' . $id);
+                exit;
             } catch (Throwable $e) {
                 $error = $e->getMessage();
             }
