@@ -133,6 +133,17 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   .finding.info .sev-name{color:var(--accent)}
   .finding-cat{font-size:12px;font-weight:600;color:var(--text2);background:var(--bg);
         border:1px solid var(--border);padding:2px 9px;border-radius:6px}
+  .preview-wrap{position:relative;display:inline-block}
+  .preview-btn{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
+        color:var(--accent);background:var(--accent-bg);border:1px solid var(--accent-border);
+        padding:2px 9px;border-radius:6px;cursor:pointer;font-family:inherit;line-height:1.5}
+  .preview-btn:hover{background:var(--accent-border)}
+  .preview-pop{display:none;position:absolute;z-index:60;top:calc(100% + 6px);left:0;
+        width:460px;max-width:82vw;background:#fff;border:1px solid var(--border2);border-radius:10px;
+        box-shadow:0 8px 24px rgba(15,23,42,.16);padding:6px}
+  .preview-wrap:hover .preview-pop{display:block}
+  .preview-pop img{width:100%;display:block;border-radius:6px}
+  .preview-loading{display:block;padding:16px;text-align:center;color:var(--text3);font-size:13px}
   .finding-page{font-size:12px;font-weight:500;color:var(--accent);background:var(--accent-bg);
         border:1px solid var(--accent-border);padding:2px 9px;border-radius:6px;text-decoration:none;
         max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}

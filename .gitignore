@@ -4,6 +4,7 @@
 .DS_Store
 Thumbs.db
 node_modules/
+app/assets/previews/
 documents/*.pdf
 documents/*.xlsx
 documents/*.csv

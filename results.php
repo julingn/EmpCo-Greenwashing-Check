@@ -261,6 +261,16 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         <div class="finding-head">
           <span class="sev-name"><?= h($sevLabel[$sev] ?? $sev) ?></span>
           <span class="finding-cat"><?= h($f['category']) ?></span>
+          <span class="preview-wrap">
+            <button type="button" class="preview-btn" aria-label="Vorschau der Fundstelle">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              Preview
+            </button>
+            <span class="preview-pop">
+              <span class="preview-loading">Screenshot wird erstellt …</span>
+              <img alt="Fundstelle" data-src="/preview.php?fid=<?= (int)$f['id'] ?>">
+            </span>
+          </span>
           <?php if (count($pages) > 1 && $pgUrl !== ''): ?><a class="finding-page" href="<?= h($pgUrl) ?>" target="_blank" rel="noopener" title="<?= h($pgUrl) ?>">↗ <?= h($pgPath) ?></a><?php endif; ?>
           <?php if ($st !== 'open'): ?><span class="finding-status">· <?= h($statusLabel[$st] ?? $st) ?></span><?php endif; ?>
           <span class="finding-meta"><?= h($f['rule_id']) ?><br><?= h($f['content_type']) ?></span>
@@ -336,5 +346,19 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
   <?php endif; ?>
   <?php endif; ?>
 <?php endif; ?>
+<script>
+document.querySelectorAll('.preview-wrap').forEach(function(w){
+  var img = w.querySelector('img[data-src]');
+  var loading = w.querySelector('.preview-loading');
+  var loaded = false;
+  w.addEventListener('mouseenter', function(){
+    if(loaded || !img){ return; }
+    loaded = true;
+    img.addEventListener('load', function(){ if(loading){ loading.style.display='none'; } });
+    img.addEventListener('error', function(){ if(loading){ loading.textContent='Vorschau nicht verfügbar.'; } });
+    img.src = img.getAttribute('data-src');
+  });
+});
+</script>
 <?php
 page_foot();
