@@ -227,11 +227,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         if ($title === '') {
             $error = 'Titel darf nicht leer sein.';
         } else {
+            $ruleSel = $_POST['rule_ids'] ?? [];
+            if (!is_array($ruleSel)) { $ruleSel = []; }
+            $ruleSel = array_values(array_unique(array_filter(array_map('trim', $ruleSel))));
             $params = [
                 ':title'       => mb_substr($title, 0, 300),
                 ':type'        => trim($_POST['type'] ?? ''),
                 ':category'    => trim($_POST['category'] ?? ''),
-                ':rule_id'     => trim($_POST['rule_id'] ?? ''),
+                ':rule_id'     => mb_substr(implode(', ', $ruleSel), 0, 2000),
                 ':content'     => trim($_POST['content'] ?? ''),
                 ':source_url'  => trim($_POST['source_url'] ?? ''),
                 ':valid_until' => trim($_POST['valid_until'] ?? ''),
@@ -278,8 +281,9 @@ function evidence_form(array $e = [], array $rules = []): void {
     $active = $isNew ? true : !empty($e['active']);
     $types = ['Zertifikat', 'Rechtsgrundlage', 'Methodik', 'Freigegebene Aussage'];
     $curType = (string)($e['type'] ?? '');
-    $curRule = (string)($e['rule_id'] ?? '');
-    $ruleIds = array_column($rules, 'rule_id');
+    $curRules = array_values(array_filter(array_map('trim', explode(',', (string)($e['rule_id'] ?? '')))));
+    $ruleIds = array_map('strval', array_column($rules, 'rule_id'));
+    $orphanRules = array_values(array_diff($curRules, $ruleIds));
     $cats = [];
     foreach ($rules as $r) { $c = trim((string)($r['category'] ?? '')); if ($c !== '') { $cats[$c] = true; } }
     $cats = array_keys($cats);
@@ -303,24 +307,19 @@ function evidence_form(array $e = [], array $rules = []): void {
           </select>
         </div>
       </div>
-      <div class="row">
-        <div>
-          <label>Kategorie (passend zur Regel-Kategorie)</label>
-          <input type="text" name="category" value="<?= $g('category') ?>" list="evi-cats-<?= $id ?>" placeholder="z. B. pauschalaussage">
-          <datalist id="evi-cats-<?= $id ?>"><?php foreach ($cats as $c): ?><option value="<?= h($c) ?>"></option><?php endforeach; ?></datalist>
-        </div>
-        <div>
-          <label>Regel (Verknüpfung, optional)</label>
-          <select name="rule_id">
-            <option value="">— keine Regel —</option>
-            <?php if ($curRule !== '' && !in_array($curRule, $ruleIds, true)): ?>
-              <option value="<?= h($curRule) ?>" selected><?= h($curRule) ?> (nicht mehr vorhanden)</option>
-            <?php endif; ?>
-            <?php foreach ($rules as $r): ?>
-              <option value="<?= h($r['rule_id']) ?>" <?= $curRule === (string)$r['rule_id'] ? 'selected' : '' ?>><?= h($r['rule_id']) ?><?= $r['category'] ? ' · ' . h($r['category']) : '' ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
+      <label>Kategorie (passend zur Regel-Kategorie)</label>
+      <input type="text" name="category" value="<?= $g('category') ?>" list="evi-cats-<?= $id ?>" placeholder="z. B. pauschalaussage">
+      <datalist id="evi-cats-<?= $id ?>"><?php foreach ($cats as $c): ?><option value="<?= h($c) ?>"></option><?php endforeach; ?></datalist>
+
+      <label>Regeln (Verknüpfung, Mehrfachauswahl)</label>
+      <div class="checklist">
+        <?php foreach ($orphanRules as $orph): ?>
+          <label class="checklist-item"><input type="checkbox" name="rule_ids[]" value="<?= h($orph) ?>" checked> <span><strong><?= h($orph) ?></strong> <span class="hint" style="margin:0">(nicht mehr vorhanden)</span></span></label>
+        <?php endforeach; ?>
+        <?php foreach ($rules as $r): $rid = (string)$r['rule_id']; ?>
+          <label class="checklist-item"><input type="checkbox" name="rule_ids[]" value="<?= h($rid) ?>" <?= in_array($rid, $curRules, true) ? 'checked' : '' ?>> <span><strong><?= h($rid) ?></strong><?= $r['category'] ? ' · ' . h($r['category']) : '' ?></span></label>
+        <?php endforeach; ?>
+        <?php if (!$rules && !$orphanRules): ?><span class="hint" style="margin:0;padding:6px 8px;display:block">Noch keine Regeln vorhanden.</span><?php endif; ?>
       </div>
       <label>Beleg-Inhalt / Nachweis-Text</label>
       <textarea name="content" style="min-height:90px" placeholder="Konkreter Nachweis, Zertifikatstext, rechtssichere Formulierung …"><?= $g('content') ?></textarea>

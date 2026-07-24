@@ -191,6 +191,11 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   details.rule[open]>summary .sum-chevron{transform:rotate(180deg)}
   .form-actions{display:flex;gap:8px;align-items:center;margin-top:16px}
   .form-actions button{margin-top:0}
+  .checklist{border:1px solid var(--border2);border-radius:var(--radius);max-height:220px;overflow:auto;padding:6px;background:#fff;margin-top:6px}
+  .checklist-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer}
+  .checklist-item:hover{background:var(--accent-bg)}
+  .checklist-item input{width:auto;margin:0;accent-color:var(--accent);flex-shrink:0}
+  .checklist-item span{min-width:0}
 </style>
 </head>
 <body>
