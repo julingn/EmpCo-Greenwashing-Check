@@ -146,6 +146,28 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   .btn-soft:hover{background:#E7EDF4;color:var(--text)}
   .btn-soft.ok:hover{background:var(--green-bg);color:var(--green);border-color:var(--green-border)}
   .btn-download{display:inline-flex;align-items:center;gap:8px;margin:0}
+  /* Ergebnis-Übersicht (Donut) */
+  .summary-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
+        box-shadow:var(--shadow);padding:20px 24px;margin-bottom:20px;display:flex;flex-direction:column;gap:14px}
+  .summary-main{display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+  .summary-donut{flex-shrink:0;position:relative;width:120px;height:120px}
+  .summary-donut svg{display:block;transform:rotate(0)}
+  .donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .donut-num{font-size:30px;font-weight:800;line-height:1;color:var(--text);font-variant-numeric:tabular-nums}
+  .donut-lbl{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+  .summary-legend{flex:1;min-width:240px;display:flex;flex-direction:column;gap:9px}
+  .legend-row{display:flex;align-items:center;gap:10px;font-size:14px;flex-wrap:wrap}
+  .legend-dot{width:11px;height:11px;border-radius:3px;flex-shrink:0}
+  .legend-name{font-weight:700;min-width:60px}
+  .legend-count{font-weight:700;font-variant-numeric:tabular-nums;min-width:20px;text-align:right}
+  .legend-share{color:var(--text3);font-size:12px;font-variant-numeric:tabular-nums;min-width:44px}
+  .legend-desc{color:var(--text2);font-size:12.5px}
+  .summary-side{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex-shrink:0}
+  .summary-status{font-size:12px;color:var(--text2)}
+  .summary-status b{color:var(--text);font-variant-numeric:tabular-nums}
+  .summary-foot{border-top:1px solid var(--border);padding-top:12px;font-size:12px;color:var(--text2);
+        display:flex;gap:8px 18px;flex-wrap:wrap;align-items:center}
+  @media(max-width:640px){.summary-side{align-items:flex-start}}
   details.rule{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
         box-shadow:var(--shadow-sm);margin-bottom:10px;overflow:hidden;
         transition:box-shadow .15s,border-color .15s}

@@ -115,40 +115,59 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
   </script>
   <?php else: ?>
 
-  <div class="card" style="padding:14px 20px;font-size:13px;color:var(--text2)">
-    <strong style="color:var(--text)">Legende</strong>
-    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">
-      <span><span class="badge violation">Verstoß</span> klar irreführend / unbelegt</span>
-      <span><span class="badge warn">Prüfen</span> kontextabhängig — manuell prüfen</span>
-      <span><span class="badge info">Hinweis</span> Trigger vorhanden, eher unkritisch</span>
-    </div>
-    <div style="margin-top:12px;display:flex;gap:18px;flex-wrap:wrap;align-items:center">
-      <span>Prüfungen:</span>
-      <span><span class="badge ok">✓</span> durchgeführt</span>
-      <span><span class="badge skipped">–</span> nicht durchgeführt</span>
-      <span><span class="badge violation">✕</span> fehlgeschlagen</span>
-      <span style="color:var(--text3)">Aktuell: Text &amp; Code aktiv · JS &amp; OCR folgen später.</span>
-    </div>
-  </div>
-
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin:24px 0 14px;flex-wrap:wrap;gap:12px">
-    <div>
-      <h2 style="margin:0 0 8px"><?= count($findings) ?> Finding<?= count($findings) === 1 ? '' : 's' ?></h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <?php if ($sevCounts['violation']): ?><span class="sev-chip violation"><span class="dot"></span><?= (int)$sevCounts['violation'] ?> Verstoß</span><?php endif; ?>
-        <?php if ($sevCounts['warn']): ?><span class="sev-chip warn"><span class="dot"></span><?= (int)$sevCounts['warn'] ?> Prüfen</span><?php endif; ?>
-        <?php if ($sevCounts['info']): ?><span class="sev-chip info"><span class="dot"></span><?= (int)$sevCounts['info'] ?> Hinweis</span><?php endif; ?>
-        <span style="font-size:12px;color:var(--text3);align-self:center">· <?= (int)$counts['open'] ?> offen · <?= (int)$counts['done'] ?> erledigt · <?= (int)$counts['ignored'] ?> ignoriert</span>
-      </div>
-    </div>
-    <?php if ($findings): ?>
-      <a href="/export.php?id=<?= (int)$id ?>" class="btn btn-download">⭳ Export CSV/Excel</a>
-    <?php endif; ?>
-  </div>
-
   <?php if (!$findings): ?>
     <div class="card"><p class="sub" style="margin:0">Keine Verstöße gefunden.</p></div>
-  <?php else: ?>
+  <?php else:
+    $totalF = count($findings);
+    $donutSegs = [
+        ['Verstoß', 'var(--red)',    (int)$sevCounts['violation'], 'klar irreführend / unbelegt'],
+        ['Prüfen',  'var(--amber)',  (int)$sevCounts['warn'],      'kontextabhängig — manuell prüfen'],
+        ['Hinweis', 'var(--accent)', (int)$sevCounts['info'],      'Trigger vorhanden, eher unkritisch'],
+    ];
+    $R = 42; $SW = 15; $C = 2 * M_PI * $R; $CX = 60; $CY = 60; $acc = 0.0;
+  ?>
+    <div class="summary-card">
+      <div class="summary-main">
+        <div class="summary-donut">
+          <svg width="120" height="120" viewBox="0 0 120 120">
+            <circle cx="<?= $CX ?>" cy="<?= $CY ?>" r="<?= $R ?>" fill="none" stroke="var(--border)" stroke-width="<?= $SW ?>"/>
+            <?php foreach ($donutSegs as $s): if ($s[2] <= 0) { continue; }
+                $frac = $s[2] / $totalF; $len = $frac * $C; $angle = -90 + ($acc * 360); $acc += $frac; ?>
+            <circle cx="<?= $CX ?>" cy="<?= $CY ?>" r="<?= $R ?>" fill="none" stroke="<?= $s[1] ?>" stroke-width="<?= $SW ?>"
+                    stroke-dasharray="<?= round($len, 1) ?> <?= round($C, 1) ?>"
+                    transform="rotate(<?= round($angle, 2) ?> <?= $CX ?> <?= $CY ?>)"/>
+            <?php endforeach; ?>
+          </svg>
+          <div class="donut-center">
+            <div class="donut-num"><?= $totalF ?></div>
+            <div class="donut-lbl">Finding<?= $totalF === 1 ? '' : 's' ?></div>
+          </div>
+        </div>
+        <div class="summary-legend">
+          <?php foreach ($donutSegs as $s): $share = round($s[2] / $totalF * 100); ?>
+          <div class="legend-row">
+            <span class="legend-dot" style="background:<?= $s[1] ?>"></span>
+            <span class="legend-name" style="color:<?= $s[1] ?>"><?= h($s[0]) ?></span>
+            <span class="legend-count"><?= $s[2] ?></span>
+            <span class="legend-share"><?= $share ?> %</span>
+            <span class="legend-desc"><?= h($s[3]) ?></span>
+          </div>
+          <?php endforeach; ?>
+        </div>
+        <div class="summary-side">
+          <a href="/export.php?id=<?= (int)$id ?>" class="btn btn-download">⭳ Export CSV/Excel</a>
+          <div class="summary-status"><b><?= (int)$counts['open'] ?></b> offen · <b><?= (int)$counts['done'] ?></b> erledigt · <b><?= (int)$counts['ignored'] ?></b> ignoriert</div>
+        </div>
+      </div>
+      <div class="summary-foot">
+        <span>Prüfungen:</span>
+        <span><span class="badge ok">✓</span> durchgeführt</span>
+        <span><span class="badge skipped">–</span> nicht durchgeführt</span>
+        <span><span class="badge violation">✕</span> fehlgeschlagen</span>
+        <span style="color:var(--text3)">Text &amp; Code aktiv · JS &amp; OCR folgen später.</span>
+      </div>
+    </div>
+
     <?php foreach ($findings as $f):
         $sev = $f['severity'];
         $st  = $f['status'];
