@@ -48,6 +48,7 @@ try {
 $sevLabel = ['violation' => 'Verstoß', 'warn' => 'Prüfen', 'info' => 'Hinweis'];
 $statusLabel = ['open' => 'offen', 'ignored' => 'ignoriert', 'done' => 'erledigt'];
 $checkLabel = ['text' => 'Text', 'code' => 'Code', 'js' => 'JS', 'ocr' => 'OCR'];
+$scopeLabel = ['exact' => 'Nur exakte URL', 'depth1' => 'Tiefe 1', 'depth2' => 'Tiefe 2', 'full' => 'Ganze Domain'];
 $counts = ['open' => 0, 'ignored' => 0, 'done' => 0];
 foreach ($findings as $ff) { $counts[$ff['status']] = ($counts[$ff['status']] ?? 0) + 1; }
 $sevCounts = ['violation' => 0, 'warn' => 0, 'info' => 0];
@@ -68,17 +69,22 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
   <div class="card">
     <div style="word-break:break-all"><strong>Quelle:</strong> <?= h($analysis['source_ref']) ?></div>
     <div style="color:var(--text2);font-size:14px;margin-top:6px">
-      Umfang: <?= h($analysis['scope']) ?> · Sprache: <?= h($analysis['language']) ?> · Status: <?= h($analysis['status']) ?> · <?= h($analysis['created_at']) ?>
+      Umfang: <?= h($scopeLabel[$analysis['scope']] ?? $analysis['scope']) ?> · Sprache: <?= h($analysis['language']) ?> · Status: <?= h($analysis['status']) ?> · <?= count($pages) ?> Seite<?= count($pages) === 1 ? '' : 'n' ?> · <?= h($analysis['created_at']) ?>
     </div>
     <?php foreach ($pages as $pg): $checks = json_decode((string)$pg['checks'], true) ?: []; ?>
-      <div class="check-status" style="margin-top:12px">
-        <?php foreach ($checkLabel as $k => $lbl):
-            $st = $checks[$k] ?? 'skipped';
-            $cls = $st === 'ok' ? 'ok' : ($st === 'failed' ? 'violation' : 'skipped');
-            $sym = $st === 'ok' ? '✓' : ($st === 'failed' ? '✕' : '–');
-        ?>
-          <span class="badge <?= $cls ?>"><?= $sym ?> <?= h($lbl) ?></span>
-        <?php endforeach; ?>
+      <div style="margin-top:12px">
+        <?php if (count($pages) > 1): ?>
+          <div style="font-size:12px;color:var(--text2);word-break:break-all;margin-bottom:5px"><?= h($pg['url']) ?></div>
+        <?php endif; ?>
+        <div class="check-status">
+          <?php foreach ($checkLabel as $k => $lbl):
+              $st = $checks[$k] ?? 'skipped';
+              $cls = $st === 'ok' ? 'ok' : ($st === 'failed' ? 'violation' : 'skipped');
+              $sym = $st === 'ok' ? '✓' : ($st === 'failed' ? '✕' : '–');
+          ?>
+            <span class="badge <?= $cls ?>"><?= $sym ?> <?= h($lbl) ?></span>
+          <?php endforeach; ?>
+        </div>
       </div>
     <?php endforeach; ?>
   </div>
@@ -90,23 +96,29 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
       <div class="progress-pct" id="pct">0&nbsp;%</div>
     </div>
     <div class="progress-bar-bg"><div class="progress-bar-fill" id="bar"></div></div>
-    <div class="hint" id="ptext">Fundstellen werden geprüft…</div>
+    <div class="hint" id="ptext">Seiten werden gelesen…</div>
   </div>
   <script>
   (function(){
     var id = <?= (int)$id ?>;
     var bar = document.getElementById('bar'), pct = document.getElementById('pct'), ptext = document.getElementById('ptext');
+    function set(p, txt){ p = Math.max(0, Math.min(100, Math.round(p))); bar.style.width = p+'%'; pct.innerHTML = p+'&nbsp;%'; ptext.textContent = txt; }
     function step(){
       fetch('/analyze_step.php?id='+id)
         .then(function(r){ return r.json(); })
         .then(function(d){
           if(d.error){ ptext.textContent = 'Fehler: '+d.error; return; }
-          var total = d.total||0, done = d.processed||0;
-          var p = total ? Math.round(done/total*100) : 100;
-          bar.style.width = p+'%'; pct.innerHTML = p+'&nbsp;%';
-          ptext.textContent = done+' von '+total+' Fundstellen geprüft';
-          if(d.finished){ ptext.textContent = 'Fertig — Ergebnis wird geladen…'; setTimeout(function(){ location.reload(); }, 600); }
-          else { setTimeout(step, 300); }
+          if(d.finished){ set(100, 'Fertig — Ergebnis wird geladen…'); setTimeout(function(){ location.reload(); }, 600); return; }
+          if(d.phase === 'crawl'){
+            var pt = d.pagesTotal||0, pf = d.pagesFetched||0;
+            var p = pt ? (pf/pt*100) : 0;
+            set(p*0.5, 'Seiten werden gelesen… ('+pf+' / '+pt+')');
+          } else {
+            var t = d.candTotal||0, dn = d.candDone||0;
+            var p = t ? (dn/t*100) : 100;
+            set(50 + p*0.5, dn+' von '+t+' Fundstellen geprüft');
+          }
+          setTimeout(step, 300);
         })
         .catch(function(){ setTimeout(step, 1500); });
     }

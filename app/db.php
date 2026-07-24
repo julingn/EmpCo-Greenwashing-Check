@@ -71,9 +71,14 @@ function db_init(): void {
             analysis_id INTEGER REFERENCES analyses(id) ON DELETE CASCADE,
             url         TEXT,
             checks      TEXT,             -- JSON: {text,code,js,ocr: ok|failed|skipped}
+            status      TEXT DEFAULT 'pending', -- pending | fetched | failed
+            depth       INTEGER DEFAULT 0,
             created_at  TIMESTAMP DEFAULT NOW()
         )
     ");
+    // Migration für bestehende DBs (Spalten für den Crawl)
+    db()->exec("ALTER TABLE pages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'");
+    db()->exec("ALTER TABLE pages ADD COLUMN IF NOT EXISTS depth INTEGER DEFAULT 0");
 
     // Findings
     db()->exec("

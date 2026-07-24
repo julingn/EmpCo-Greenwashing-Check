@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
                     ':l' => $language,
                 ]);
                 $id = (int) $stmt->fetchColumn();
-                prepare_analysis($id, $url);
+                prepare_analysis($id, $url, $scope);
                 header('Location: /results.php?id=' . $id);
                 exit;
             } catch (Throwable $e) {

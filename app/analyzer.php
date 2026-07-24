@@ -3,13 +3,13 @@
 require_once __DIR__ . '/ai.php';
 
 /** Lädt eine URL herunter. */
-function fetch_url(string $url): array {
+function fetch_url(string $url, int $timeout = 30): array {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_MAXREDIRS      => 5,
-        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_TIMEOUT        => $timeout,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; EmpCo-Greenwashing-Check/1.0)',
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
@@ -50,56 +50,203 @@ function candidate_rules(array $rules, string $haystack): array {
 }
 
 /**
- * Bereitet eine Analyse vor: fetch → extract → Seite speichern → Kandidaten bilden & speichern.
- * Die eigentliche KI-Bewertung erfolgt danach schrittweise über process_step().
+ * Bereitet eine Analyse vor: Seed-URL als erste (noch ungelesene) Seite einreihen.
+ * Das eigentliche Lesen (Crawl) + KI-Bewertung erfolgt schrittweise über process_step().
  * @return array{total:int, note:string}
  */
-function prepare_analysis(int $analysisId, string $url): array {
+function prepare_analysis(int $analysisId, string $url, string $scope = 'exact'): array {
+    $seed = preg_replace('/#.*$/', '', trim($url)); // Fragment entfernen
+    db()->prepare(
+        "INSERT INTO pages (analysis_id, url, depth, status, checks)
+         VALUES (:a, :u, 0, 'pending', NULL)"
+    )->execute([':a' => $analysisId, ':u' => mb_substr((string)$seed, 0, 500)]);
+    db()->prepare("UPDATE analyses SET status='running' WHERE id=:id")->execute([':id' => $analysisId]);
+    return ['total' => 0, 'note' => ''];
+}
+
+/** Umfang → maximale Crawl-Tiefe und Seiten-Obergrenze. */
+function scope_config(string $scope): array {
+    return match ($scope) {
+        'depth1' => ['maxDepth' => 1,  'maxPages' => 20],
+        'depth2' => ['maxDepth' => 2,  'maxPages' => 40],
+        'full'   => ['maxDepth' => 99, 'maxPages' => 60],
+        default  => ['maxDepth' => 0,  'maxPages' => 1],
+    };
+}
+
+/** Normalisiert einen Host (führendes www. entfernen). */
+function norm_host(string $h): string {
+    return preg_replace('#^www\.#i', '', strtolower($h)) ?? strtolower($h);
+}
+
+/** Gleiche Website (Host-Vergleich ohne www)? */
+function same_site(string $a, string $b): bool {
+    return $a !== '' && $b !== '' && norm_host($a) === norm_host($b);
+}
+
+/** Löst ../ und ./ in einer absoluten URL auf und normalisiert Host/Slash. */
+function normalize_path_url(string $url): string {
+    $p = parse_url($url);
+    if (!isset($p['host'])) { return $url; }
+    $scheme = $p['scheme'] ?? 'https';
+    $host   = strtolower($p['host']);
+    $port   = isset($p['port']) ? ':' . $p['port'] : '';
+    $path   = $p['path'] ?? '/';
+    $out = [];
+    foreach (explode('/', $path) as $seg) {
+        if ($seg === '' || $seg === '.') { continue; }
+        if ($seg === '..') { array_pop($out); continue; }
+        $out[] = $seg;
+    }
+    $newPath = '/' . implode('/', $out);
+    if ($newPath !== '/' && substr($newPath, -1) === '/') { $newPath = rtrim($newPath, '/'); }
+    return $scheme . '://' . $host . $port . $newPath;
+}
+
+/** Wandelt einen (evtl. relativen) Link in eine absolute, prüfbare http(s)-URL um. */
+function resolve_url(string $base, string $rel): ?string {
+    $rel = trim($rel);
+    if ($rel === '' || preg_match('~^(mailto:|tel:|javascript:|data:|#)~i', $rel)) { return null; }
+
+    if (preg_match('#^https?://#i', $rel)) {
+        $abs = $rel;
+    } elseif (str_starts_with($rel, '//')) {
+        $bp = parse_url($base);
+        $abs = ($bp['scheme'] ?? 'https') . ':' . $rel;
+    } else {
+        $bp = parse_url($base);
+        if (!isset($bp['scheme'], $bp['host'])) { return null; }
+        $origin = $bp['scheme'] . '://' . $bp['host'] . (isset($bp['port']) ? ':' . $bp['port'] : '');
+        if (str_starts_with($rel, '/')) {
+            $abs = $origin . $rel;
+        } else {
+            $dir = preg_replace('#/[^/]*$#', '/', $bp['path'] ?? '/');
+            if ($dir === null || $dir === '') { $dir = '/'; }
+            $abs = $origin . $dir . $rel;
+        }
+    }
+    $abs = preg_replace('/#.*$/', '', $abs);   // Fragment entfernen
+    $abs = preg_replace('/\?.*$/', '', $abs);  // Query entfernen (begrenzt Crawl-Explosion)
+    if (!is_string($abs) || !preg_match('#^https?://#i', $abs)) { return null; }
+    // Datei-Endungen überspringen, die wir nicht als Text auslesen
+    if (preg_match('#\.(pdf|jpe?g|png|gif|svg|webp|zip|docx?|xlsx?|pptx?|mp4|mp3|css|js|ico|woff2?|ttf)$#i', $abs)) { return null; }
+    return normalize_path_url($abs);
+}
+
+/** Extrahiert alle absoluten Links (<a href>) aus HTML. */
+function extract_links(string $html, string $baseUrl): array {
+    $links = [];
+    if (preg_match_all('#<a\b[^>]*\bhref\s*=\s*("|\')(.*?)\1#is', $html, $m)) {
+        foreach ($m[2] as $href) {
+            $abs = resolve_url($baseUrl, html_entity_decode($href, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            if ($abs !== null) { $links[$abs] = true; }
+        }
+    }
+    return array_keys($links);
+}
+
+/**
+ * Liest eine ausstehende Seite: fetch → extract → Kandidaten bilden → ggf. Kinder einreihen.
+ */
+function crawl_one_page(int $analysisId, array $page, array $cfg, string $seedHost): void {
+    $pageId = (int) $page['id'];
+    $url    = (string) $page['url'];
+    $depth  = (int) $page['depth'];
     $checks = ['text' => 'skipped', 'code' => 'skipped', 'js' => 'skipped', 'ocr' => 'skipped'];
 
-    $res = fetch_url($url);
+    $res = fetch_url($url, 20);
     if ($res['html'] === '' || $res['code'] >= 400) {
         $checks['text'] = 'failed';
         $checks['code'] = 'failed';
-        save_page($analysisId, $url, $checks);
-        db()->prepare("UPDATE analyses SET status='error' WHERE id=:id")->execute([':id' => $analysisId]);
-        return ['total' => 0, 'note' => 'Seite nicht erreichbar (HTTP ' . $res['code'] . ') ' . $res['error']];
+        db()->prepare("UPDATE pages SET status='failed', checks=:c WHERE id=:id")
+            ->execute([':c' => json_encode($checks), ':id' => $pageId]);
+        return;
     }
 
     $content = extract_content($res['html']);
     $checks['text'] = $content['text'] !== '' ? 'ok' : 'failed';
     $checks['code'] = 'ok';
-    $pageId = save_page($analysisId, $url, $checks);
+    db()->prepare("UPDATE pages SET status='fetched', checks=:c WHERE id=:id")
+        ->execute([':c' => json_encode($checks), ':id' => $pageId]);
 
+    // Kandidaten dieser Seite
     $rules = db()->query("SELECT * FROM rules WHERE active ORDER BY rule_id")->fetchAll();
-    $candidates = build_candidates($rules, $content['text'], $content['attrs']);
-
+    $cands = build_candidates($rules, $content['text'], $content['attrs']);
     $stmt = db()->prepare(
         "INSERT INTO candidates (analysis_id, page_id, rule_id, category, content_type, snippet)
          VALUES (:a, :p, :rid, :cat, :ct, :snip)"
     );
-    foreach ($candidates as $c) {
+    foreach ($cands as $c) {
         $stmt->execute([
             ':a' => $analysisId, ':p' => $pageId, ':rid' => $c['rule_id'],
             ':cat' => $c['category'], ':ct' => $c['content_type'], ':snip' => mb_substr($c['snippet'], 0, 1000),
         ]);
     }
 
-    if (!$candidates) {
-        db()->prepare("UPDATE analyses SET status='done' WHERE id=:id")->execute([':id' => $analysisId]);
+    // Kinder einreihen (nur gleiche Website, innerhalb Tiefe & Seiten-Obergrenze)
+    if ($depth < $cfg['maxDepth'] && $seedHost !== '') {
+        $pagesCount = (int) db()->query("SELECT COUNT(*) FROM pages WHERE analysis_id = " . (int)$analysisId)->fetchColumn();
+        if ($pagesCount < $cfg['maxPages']) {
+            $enq = db()->prepare(
+                "INSERT INTO pages (analysis_id, url, depth, status, checks)
+                 SELECT :a, :u, :d, 'pending', NULL
+                 WHERE NOT EXISTS (SELECT 1 FROM pages WHERE analysis_id = :a2 AND url = :u2)"
+            );
+            foreach (extract_links($res['html'], $url) as $link) {
+                if ($pagesCount >= $cfg['maxPages']) { break; }
+                $host = (string) (parse_url($link, PHP_URL_HOST) ?: '');
+                if (!same_site($host, $seedHost)) { continue; }
+                $short = mb_substr($link, 0, 500);
+                $enq->execute([':a' => $analysisId, ':u' => $short, ':d' => $depth + 1, ':a2' => $analysisId, ':u2' => $short]);
+                if ($enq->rowCount() > 0) { $pagesCount++; }
+            }
+        }
     }
-    return ['total' => count($candidates), 'note' => ''];
+}
+
+/** Zählt Seiten/Kandidaten und liefert den Fortschritts-Status zurück. */
+function step_status(int $analysisId, string $phase, bool $finished): array {
+    $id = (int) $analysisId;
+    $pagesTotal   = (int) db()->query("SELECT COUNT(*) FROM pages WHERE analysis_id = $id")->fetchColumn();
+    $pagesFetched = (int) db()->query("SELECT COUNT(*) FROM pages WHERE analysis_id = $id AND status <> 'pending'")->fetchColumn();
+    $candTotal    = (int) db()->query("SELECT COUNT(*) FROM candidates WHERE analysis_id = $id")->fetchColumn();
+    $candDone     = (int) db()->query("SELECT COUNT(*) FROM candidates WHERE analysis_id = $id AND processed")->fetchColumn();
+    return [
+        'phase'        => $phase,
+        'finished'     => $finished,
+        'pagesTotal'   => $pagesTotal,
+        'pagesFetched' => $pagesFetched,
+        'candTotal'    => $candTotal,
+        'candDone'     => $candDone,
+        // Kompatibilität mit älterem Frontend
+        'total'        => $candTotal,
+        'processed'    => $candDone,
+    ];
 }
 
 /**
- * Verarbeitet den nächsten Kandidaten-Block (ein KI-Aufruf) und speichert Findings.
- * @return array{finished:bool, total:int, processed:int}
+ * Ein Verarbeitungsschritt: erst ausstehende Seite lesen (Crawl), dann Kandidaten-Block bewerten.
+ * @return array Fortschritts-Status (siehe step_status)
  */
 function process_step(int $analysisId, int $size = 12): array {
+    $id = (int) $analysisId;
+    $a  = db()->query("SELECT scope FROM analyses WHERE id = $id")->fetch();
+    $cfg = scope_config((string) ($a['scope'] ?? 'exact'));
+    $seedRow  = db()->query("SELECT url FROM pages WHERE analysis_id = $id AND depth = 0 ORDER BY id LIMIT 1")->fetch();
+    $seedHost = $seedRow ? (string) (parse_url((string)$seedRow['url'], PHP_URL_HOST) ?: '') : '';
+
+    // Phase 1 — Crawl: nächste ausstehende Seite lesen
+    $pending = db()->query("SELECT * FROM pages WHERE analysis_id = $id AND status = 'pending' ORDER BY depth, id LIMIT 1")->fetch();
+    if ($pending) {
+        crawl_one_page($id, $pending, $cfg, $seedHost);
+        return step_status($id, 'crawl', false);
+    }
+
+    // Phase 2 — Klassifizierung: nächsten Kandidaten-Block per KI bewerten
     $sel = db()->prepare(
         "SELECT * FROM candidates WHERE analysis_id = :a AND processed = FALSE ORDER BY id LIMIT " . (int)$size
     );
-    $sel->execute([':a' => $analysisId]);
+    $sel->execute([':a' => $id]);
     $batch = $sel->fetchAll();
 
     if ($batch) {
@@ -110,10 +257,11 @@ function process_step(int $analysisId, int $size = 12): array {
                 "INSERT INTO findings (analysis_id, page_id, rule_id, category, content_type, snippet, assessment, severity, status)
                  VALUES (:a, :p, :rid, :cat, :ct, :snip, :ass, :sev, 'open')"
             );
-            $pageId = (int)($batch[0]['page_id'] ?? 0);
-            foreach ($classified as $f) {
+            foreach ($batch as $i => $c) {
+                $f = $classified[$i] ?? null;
+                if (!$f) { continue; }
                 $ins->execute([
-                    ':a' => $analysisId, ':p' => $pageId ?: null, ':rid' => $f['rule_id'], ':cat' => $f['category'],
+                    ':a' => $id, ':p' => ((int)$c['page_id'] ?: null), ':rid' => $f['rule_id'], ':cat' => $f['category'],
                     ':ct' => $f['content_type'], ':snip' => mb_substr($f['snippet'], 0, 1000),
                     ':ass' => mb_substr($f['assessment'], 0, 1000), ':sev' => $f['severity'],
                 ]);
@@ -123,15 +271,12 @@ function process_step(int $analysisId, int $size = 12): array {
         }
         $ids = array_map('intval', array_column($batch, 'id'));
         db()->exec("UPDATE candidates SET processed = TRUE WHERE id IN (" . implode(',', $ids) . ")");
+        return step_status($id, 'classify', false);
     }
 
-    $total = (int) db()->query("SELECT COUNT(*) FROM candidates WHERE analysis_id = " . (int)$analysisId)->fetchColumn();
-    $done  = (int) db()->query("SELECT COUNT(*) FROM candidates WHERE analysis_id = " . (int)$analysisId . " AND processed")->fetchColumn();
-    $finished = $done >= $total;
-    if ($finished) {
-        db()->prepare("UPDATE analyses SET status='done' WHERE id=:id")->execute([':id' => $analysisId]);
-    }
-    return ['finished' => $finished, 'total' => $total, 'processed' => $done];
+    // Fertig
+    db()->prepare("UPDATE analyses SET status='done' WHERE id=:id")->execute([':id' => $id]);
+    return step_status($id, 'done', true);
 }
 
 /** Speichert einen Seiten-Eintrag inkl. Prüf-Status. */
