@@ -81,22 +81,71 @@ const ACCEPT_SELECTORS = [
     });
     await new Promise(r => setTimeout(r, 900));
 
-    // Fundstelle finden, hervorheben, mittig scrollen
+    // Fundstelle finden (über Textknoten hinweg), hervorheben, mittig scrollen
     await page.evaluate((snip) => {
-      const norm = s => (s || '').replace(/[…]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-      let target = norm(snip);
-      if (target.length > 80) target = target.slice(0, 80);
-      if (target.length < 6) return false;
+      const clean = s => (s || '').replace(/[\u2026]/g, ' ').replace(/\s+/g, ' ').trim();
+      const full = clean(snip);
+      if (full.length < 6) { return false; }
+      const words = full.split(' ').filter(Boolean);
+
+      // Kandidaten-Phrasen: spezifisch (lang) → allgemeiner (kurz)
+      const cand = [full.slice(0, 140)];
+      for (const len of [12, 9, 7, 5, 4]) {
+        if (words.length >= len) {
+          const mid = Math.max(0, Math.floor((words.length - len) / 2));
+          cand.push(words.slice(mid, mid + len).join(' '));
+          cand.push(words.slice(0, len).join(' '));
+        }
+      }
+      const seen = new Set();
+      const list = cand.filter(c => c && c.length >= 6 && !seen.has(c) && (seen.add(c), true));
+
+      const drawAndCenter = (range) => {
+        const rects = range.getClientRects();
+        if (!rects || !rects.length) { return false; }
+        const sx = window.scrollX, sy = window.scrollY;
+        let top = Infinity, height = 0, any = false;
+        for (const r of rects) {
+          if (r.width < 1 && r.height < 1) { continue; }
+          any = true;
+          const box = document.createElement('div');
+          box.style.cssText = 'position:absolute;z-index:2147483647;pointer-events:none;border:3px solid #E90C3C;background:rgba(233,12,60,0.18);border-radius:3px';
+          box.style.left = (r.left + sx - 2) + 'px';
+          box.style.top = (r.top + sy - 2) + 'px';
+          box.style.width = (r.width + 4) + 'px';
+          box.style.height = (r.height + 4) + 'px';
+          document.body.appendChild(box);
+          top = Math.min(top, r.top + sy);
+          height = Math.max(height, r.height);
+        }
+        if (!any) { return false; }
+        window.scrollTo(0, Math.max(0, top - (window.innerHeight / 2) + height / 2));
+        return true;
+      };
+
+      const sel = window.getSelection();
+      for (const c of list) {
+        sel.removeAllRanges();
+        let found = false;
+        try { found = window.find(c, false, false, true, false, false, false); } catch (_) { }
+        if (found && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0).cloneRange();
+          sel.removeAllRanges();
+          if (drawAndCenter(range)) { return true; }
+        }
+      }
+
+      // Fallback: einzelner Textknoten enthält eine kurze Phrase
+      const targetShort = (words.slice(0, 6).join(' ') || full).toLowerCase();
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
       let node;
       while ((node = walker.nextNode())) {
-        const t = norm(node.nodeValue);
-        if (t.length >= 6 && t.includes(target)) {
+        const t = (node.nodeValue || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (t.length >= 6 && targetShort.length >= 6 && t.includes(targetShort)) {
           const el = node.parentElement;
-          if (!el) continue;
-          try { el.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (_) { }
+          if (!el) { continue; }
+          try { el.scrollIntoView({ block: 'center' }); } catch (_) { }
           el.style.outline = '3px solid #E90C3C';
-          el.style.outlineOffset = '2px';
           el.style.backgroundColor = 'rgba(233,12,60,0.14)';
           return true;
         }
