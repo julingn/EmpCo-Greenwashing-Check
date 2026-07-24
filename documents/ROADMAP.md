@@ -31,6 +31,7 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
 - ✅ **Beispiel-Bibliothek (Few-Shot)** im Admin (`training_examples`): Vorher/Nachher-Beispiele je Kategorie/Regel (Mehrfach-Regel-Verknüpfung), vorbefüllt mit **rechtlich fundierten** Beispielen aus VKU-FAQ + BDEW-Ökostrom-Gutachten (u. a. „Ökostrom → 100 % Strom aus erneuerbaren Energien", Drei-Schritt-Ansatz). Basis für Stufe C und D.
 - ✅ **Stufe C — Umformulierung:** on-demand Button „Umformulieren" je Finding. Exakt-Match-Kurzschluss (wortgleiche Fundstelle → geprüfter „Nachher"-Text 1:1), sonst KI (Redakteur-Prompt) mit passenden **Beispielen** (Few-Shot) + **Belegen** als Kontext. Vorschlag editierbar; Übernehmen/Verwerfen; Speicherung in `reformulations`.
 - ⬜ **Stufe D — Lernfunktion:** akzeptierte Ergebnisse → `training_examples`.
+  - ⬜ **Un-Learn:** Ein einmal akzeptierter Vorschlag muss jederzeit wieder aus dem **Trainingsgedächtnis** (`training_examples`) **entfernt** werden können, sodass die KI ihn nicht mehr als Muster (Few-Shot) verwendet — inkl. Herkunfts-Kennzeichnung (manuell/kuratiert vs. automatisch gelernt) und einzelner Löschung im Admin.
 - Mensch bleibt in der Schleife: Tool schlägt vor, User akzeptiert/verwirft.
 
 ## Admin-Ausbau (geplant)
