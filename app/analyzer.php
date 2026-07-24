@@ -607,3 +607,101 @@ function nachweis_check(int $findingId): array {
         ]);
     return $res;
 }
+
+/** Normalisiert Text für Vergleiche (Kleinschreibung, Whitespace zusammenfassen). */
+function normalize_text(string $s): string {
+    $s = mb_strtolower(trim($s));
+    return (string) preg_replace('/\s+/u', ' ', $s);
+}
+
+/** Vorher/Nachher-Beispiele, die zur Regel-ID (Liste) oder Kategorie eines Findings passen. */
+function matching_examples(string $ruleId, string $category): array {
+    try {
+        $all = db()->query("SELECT * FROM training_examples WHERE active ORDER BY id")->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+    $cat = mb_strtolower(trim($category));
+    $out = [];
+    foreach ($all as $ex) {
+        $rids = array_filter(array_map('trim', explode(',', (string)($ex['rule_id'] ?? ''))));
+        $exCat = mb_strtolower(trim((string)($ex['category'] ?? '')));
+        if (in_array($ruleId, $rids, true) || ($cat !== '' && $exCat === $cat)) {
+            $out[] = $ex;
+        }
+    }
+    return $out;
+}
+
+/** Speichert einen Umformulierungs-Vorschlag (ersetzt vorherige, noch nicht übernommene). */
+function save_reformulation(int $findingId, string $kind, string $text): int {
+    db()->prepare("DELETE FROM reformulations WHERE finding_id = :f AND accepted = FALSE")->execute([':f' => $findingId]);
+    $stmt = db()->prepare("INSERT INTO reformulations (finding_id, kind, text, accepted) VALUES (:f, :k, :t, FALSE) RETURNING id");
+    $stmt->execute([':f' => $findingId, ':k' => $kind, ':t' => mb_substr($text, 0, 4000)]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Umformulierung (Stufe C): erzeugt einen EmpCo-konformen Vorschlag für ein Finding.
+ * 1) Exakt-Match-Kurzschluss: (nahezu) wortgleiche Fundstelle → geprüfter „Nachher"-Text 1:1.
+ * 2) sonst KI mit passenden Beispielen (Few-Shot) + passenden Belegen als Kontext.
+ */
+function generate_reformulation(int $findingId): array {
+    $stmt = db()->prepare("SELECT * FROM findings WHERE id = :id");
+    $stmt->execute([':id' => $findingId]);
+    $f = $stmt->fetch();
+    if (!$f) { return ['kind' => '', 'text' => '', 'error' => 'Finding nicht gefunden.']; }
+
+    $snippet  = (string) $f['snippet'];
+    $examples = matching_examples((string) $f['rule_id'], (string) $f['category']);
+
+    // 1) Exakt-Match-Kurzschluss
+    $normSnip = normalize_text($snippet);
+    foreach ($examples as $ex) {
+        $before = normalize_text((string)($ex['before_text'] ?? ''));
+        $after  = trim((string)($ex['after_text'] ?? ''));
+        if ($before !== '' && $after !== '' && mb_strlen($before) >= 15
+            && ($before === $normSnip || mb_strpos($normSnip, $before) !== false)) {
+            $refId = save_reformulation($findingId, 'example', $after);
+            return ['kind' => 'example', 'text' => $after, 'id' => $refId];
+        }
+    }
+
+    // 2) KI-Umformulierung mit Few-Shot-Beispielen + Belegen
+    $evidence = matching_evidence((string) $f['rule_id'], (string) $f['category']);
+    $ctx = '';
+    if ($evidence) {
+        $ctx .= "VERFÜGBARE BELEGE (passende mit Quellenangabe einbauen):\n";
+        foreach ($evidence as $ev) {
+            $ctx .= "- [{$ev['type']}] {$ev['title']}: " . mb_substr((string)$ev['content'], 0, 500)
+                . ($ev['source_url'] ? " (Quelle: {$ev['source_url']})" : '') . "\n";
+        }
+        $ctx .= "\n";
+    }
+    if ($examples) {
+        $ctx .= "BEISPIELE FÜR KONFORME UMFORMULIERUNGEN (Muster für Stil & Lösungsweg, NICHT wörtlich übernehmen):\n";
+        foreach (array_slice($examples, 0, 6) as $ex) {
+            $ctx .= "Vorher: " . mb_substr((string)$ex['before_text'], 0, 300) . "\n"
+                . "Nachher: " . mb_substr((string)$ex['after_text'], 0, 300) . "\n---\n";
+        }
+        $ctx .= "\n";
+    }
+
+    $system = editor_prompt();
+    $user = "BEANSTANDETE TEXTSTELLE:\n\"{$snippet}\"\n\n"
+        . "REGEL: {$f['rule_id']} [{$f['category']}]\n"
+        . "BEWERTUNG: " . mb_substr((string)$f['assessment'], 0, 400) . "\n\n"
+        . $ctx
+        . "AUFGABE: Formuliere die beanstandete Textstelle EmpCo-konform um. Behalte Sprache und Kernbotschaft bei. "
+        . "Antworte NUR mit dem umformulierten Text (ohne Anführungszeichen, ohne Erläuterung).";
+
+    try {
+        $text = trim(call_ai($system, $user));
+        $text = trim($text, "\"'„“ \n\r\t");
+        if ($text === '') { throw new RuntimeException('Leere Antwort.'); }
+        $refId = save_reformulation($findingId, 'ai', $text);
+        return ['kind' => 'ai', 'text' => $text, 'id' => $refId];
+    } catch (Throwable $e) {
+        return ['kind' => '', 'text' => '', 'error' => 'Umformulierung fehlgeschlagen: ' . $e->getMessage()];
+    }
+}

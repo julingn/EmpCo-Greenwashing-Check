@@ -14,6 +14,7 @@ $error = '';
 $analysis = null;
 $pages = [];
 $findings = [];
+$reforms = [];
 
 // Status eines Findings ändern (Ignorieren/Erledigt/Zurücksetzen)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finding_status') {
@@ -42,6 +43,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
     exit;
 }
 
+// Umformulierung generieren (Stufe C): KI mit Few-Shot-Beispielen + passenden Belegen
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reformulate') {
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        require_once __DIR__ . '/app/analyzer.php';
+        set_time_limit(0);
+        try {
+            db_init();
+            generate_reformulation((int)($_POST['fid'] ?? 0));
+        } catch (Throwable $e) { /* ignoriert */ }
+    }
+    header('Location: /results.php?id=' . $id . '#f' . (int)($_POST['fid'] ?? 0));
+    exit;
+}
+
+// Umformulierung übernehmen (ggf. bearbeitet)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reformulation_accept') {
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        $rid = (int)($_POST['rid'] ?? 0);
+        $txt = trim($_POST['reform_text'] ?? '');
+        try {
+            $row = db()->prepare("SELECT finding_id FROM reformulations WHERE id = :id");
+            $row->execute([':id' => $rid]);
+            $fidOf = (int)($row->fetchColumn() ?: 0);
+            db()->prepare("UPDATE reformulations SET text = :t, accepted = TRUE WHERE id = :id")
+                ->execute([':t' => mb_substr($txt, 0, 4000), ':id' => $rid]);
+            if ($fidOf > 0) {
+                db()->prepare("DELETE FROM reformulations WHERE finding_id = :f AND id <> :id")
+                    ->execute([':f' => $fidOf, ':id' => $rid]);
+            }
+        } catch (Throwable $e) { /* ignoriert */ }
+    }
+    header('Location: /results.php?id=' . $id . '#f' . (int)($_POST['fid'] ?? 0));
+    exit;
+}
+
+// Umformulierung verwerfen
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reformulation_reject') {
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        try {
+            db()->prepare("DELETE FROM reformulations WHERE id = :id")->execute([':id' => (int)($_POST['rid'] ?? 0)]);
+        } catch (Throwable $e) { /* ignoriert */ }
+    }
+    header('Location: /results.php?id=' . $id . '#f' . (int)($_POST['fid'] ?? 0));
+    exit;
+}
+
 try {
     db_init();
     $stmt = db()->prepare("SELECT * FROM analyses WHERE id = :id");
@@ -54,6 +101,12 @@ try {
         $f = db()->prepare("SELECT * FROM findings WHERE analysis_id = :id ORDER BY status, severity, category, rule_id");
         $f->execute([':id' => $id]);
         $findings = $f->fetchAll();
+        $rq = db()->prepare("SELECT r.* FROM reformulations r JOIN findings f ON f.id = r.finding_id WHERE f.analysis_id = :id ORDER BY r.accepted DESC, r.id DESC");
+        $rq->execute([':id' => $id]);
+        foreach ($rq->fetchAll() as $rr) {
+            $rfid = (int)$rr['finding_id'];
+            if (!isset($reforms[$rfid])) { $reforms[$rfid] = $rr; }
+        }
     }
 } catch (Throwable $e) {
     $error = $e->getMessage();
@@ -202,6 +255,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         $resolved = $st !== 'open' ? ' resolved' : '';
         $pgUrl = $pageUrls[(int)$f['page_id']] ?? '';
         $pgPath = $pgUrl !== '' ? (parse_url($pgUrl, PHP_URL_PATH) ?: '/') : '';
+        $rf = $reforms[(int)$f['id']] ?? null;
     ?>
       <div class="finding <?= h($sev) . $resolved ?>" id="f<?= (int)$f['id'] ?>">
         <div class="finding-head">
@@ -224,12 +278,33 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
             <?php if (!empty($f['remedy_note'])): ?><div class="remedy-note"><?= h($f['remedy_note']) ?></div><?php endif; ?>
           </div>
         <?php endif; ?>
+        <?php if ($rf): $accepted = !empty($rf['accepted']); $kindLbl = $rf['kind'] === 'example' ? 'Vorschlag (geprüftes Beispiel)' : ($rf['kind'] === 'manual' ? 'Manuell' : 'KI-Vorschlag'); ?>
+          <div class="reform<?= $accepted ? ' accepted' : '' ?>">
+            <div class="reform-tag"><?= $accepted ? '✓ Übernommene Umformulierung' : ('✎ ' . h($kindLbl)) ?></div>
+            <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
+              <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+              <input type="hidden" name="rid" value="<?= (int)$rf['id'] ?>">
+              <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
+              <textarea name="reform_text" class="reform-text"><?= h($rf['text']) ?></textarea>
+              <div class="reform-actions">
+                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok"><?= $accepted ? '✓ Änderung speichern' : '✓ Übernehmen' ?></button>
+                <button type="submit" name="action" value="reformulation_reject" class="btn-soft" formnovalidate>✕ Verwerfen</button>
+              </div>
+            </form>
+          </div>
+        <?php endif; ?>
         <div class="finding-actions">
           <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
             <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
             <input type="hidden" name="action" value="check_evidence">
             <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
             <button type="submit" class="btn-soft"><?= empty($f['remedy_path']) ? '🔎 Nachweis prüfen' : '↻ Erneut prüfen' ?></button>
+          </form>
+          <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
+            <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+            <input type="hidden" name="action" value="reformulate">
+            <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
+            <button type="submit" class="btn-soft"><?= $rf ? '✎ Neu umformulieren' : '✎ Umformulieren' ?></button>
           </form>
           <?php if ($st === 'open'): ?>
             <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">

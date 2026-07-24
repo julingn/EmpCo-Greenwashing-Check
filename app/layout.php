@@ -146,6 +146,12 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   .remedy{margin-top:12px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-wrap:wrap;align-items:center;gap:10px}
   .remedy-ev{font-size:12.5px;color:var(--text2);font-weight:600}
   .remedy-note{flex-basis:100%;color:var(--text2);font-size:13px;line-height:1.5;margin-top:2px}
+  .reform{margin-top:12px;padding:14px 16px;background:var(--accent-bg);border:1px solid var(--accent-border);border-radius:var(--radius)}
+  .reform.accepted{background:var(--green-bg);border-color:var(--green-border)}
+  .reform-tag{font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px}
+  .reform.accepted .reform-tag{color:var(--green)}
+  .reform-text{width:100%;min-height:72px;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-family:inherit;font-size:14px;line-height:1.55;background:#fff;color:var(--text);resize:vertical}
+  .reform-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
   .finding-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
   .btn-soft{display:inline-flex;align-items:center;gap:6px;background:#F1F5F9;color:var(--text2);
         border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;
