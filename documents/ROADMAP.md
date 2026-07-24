@@ -30,8 +30,8 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
 - ✅ **Stufe B — Nachweis-Check je Finding:** on-demand pro Finding (Button „Nachweis prüfen"). Belege werden gezielt über **Regel-ID-Liste ODER Kategorie** gematcht; ohne Treffer direkt *nicht belegbar* (kein KI-Aufruf), mit Treffer entscheidet die KI zwischen *belegbar / belegt_anpassen / nicht_belegbar* (JSON). Ergebnis + Begründung wird am Finding gespeichert und in der Ergebnis-Ansicht angezeigt.
 - ✅ **Beispiel-Bibliothek (Few-Shot)** im Admin (`training_examples`): Vorher/Nachher-Beispiele je Kategorie/Regel (Mehrfach-Regel-Verknüpfung), vorbefüllt mit **rechtlich fundierten** Beispielen aus VKU-FAQ + BDEW-Ökostrom-Gutachten (u. a. „Ökostrom → 100 % Strom aus erneuerbaren Energien", Drei-Schritt-Ansatz). Basis für Stufe C und D.
 - ✅ **Stufe C — Umformulierung:** on-demand Button „Umformulieren" je Finding. Exakt-Match-Kurzschluss (wortgleiche Fundstelle → geprüfter „Nachher"-Text 1:1), sonst KI (Redakteur-Prompt) mit passenden **Beispielen** (Few-Shot) + **Belegen** als Kontext. Vorschlag editierbar; Übernehmen/Verwerfen; Speicherung in `reformulations`.
-- ⬜ **Stufe D — Lernfunktion:** akzeptierte Ergebnisse → `training_examples`.
-  - ⬜ **Un-Learn:** Ein einmal akzeptierter Vorschlag muss jederzeit wieder aus dem **Trainingsgedächtnis** (`training_examples`) **entfernt** werden können, sodass die KI ihn nicht mehr als Muster (Few-Shot) verwendet — inkl. Herkunfts-Kennzeichnung (manuell/kuratiert vs. automatisch gelernt) und einzelner Löschung im Admin.
+- ✅ **Stufe D — Lernfunktion:** akzeptierte Umformulierungen werden automatisch als Beispiel in `training_examples` gespeichert (Herkunft `learned`, Upsert je Finding – kein Duplikat) und fließen als Few-Shot in künftige Umformulierungen ein.
+  - ✅ **Un-Learn:** gelernte Beispiele sind im Admin („Beispiele“) als „gelernt“ gekennzeichnet und einzeln löschbar; Bearbeiten stuft sie auf „kuratiert“ hoch. Damit ist ein akzeptierter Vorschlag jederzeit wieder aus dem Trainingsgedächtnis entfernbar.
 - Mensch bleibt in der Schleife: Tool schlägt vor, User akzeptiert/verwirft.
 
 ## Admin-Ausbau (geplant)

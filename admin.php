@@ -371,13 +371,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                     $params[':id'] = $exid;
                     db()->prepare(
                         "UPDATE training_examples SET category=:category, rule_id=:rule_id, before_text=:before,
-                            after_text=:after, note=:note, active=:active WHERE id=:id"
+                            after_text=:after, note=:note, active=:active, source='manual' WHERE id=:id"
                     )->execute($params);
                     $info = 'Beispiel aktualisiert.';
                 } else {
                     db()->prepare(
-                        "INSERT INTO training_examples (category, rule_id, before_text, after_text, note, active)
-                         VALUES (:category, :rule_id, :before, :after, :note, :active)"
+                        "INSERT INTO training_examples (category, rule_id, before_text, after_text, note, active, source)
+                         VALUES (:category, :rule_id, :before, :after, :note, :active, 'manual')"
                     )->execute($params);
                     $info = 'Beispiel angelegt.';
                 }
@@ -769,7 +769,7 @@ page_head('Admin — EmpCo Greenwashing-Check', $section);
 
     <?php elseif ($section === 'examples'): ?>
 
-      <p class="hint" style="margin-top:0">Vorher/Nachher-Beispiele als <strong>Few-Shot</strong> für die Umformulierung (Stufe C). Werden je Finding nach <strong>Kategorie/Regel</strong> passgenau eingespielt. Vorbefüllt mit rechtlich fundierten Beispielen (VKU-FAQ + BDEW-Gutachten).</p>
+      <p class="hint" style="margin-top:0">Vorher/Nachher-Beispiele als <strong>Few-Shot</strong> für die Umformulierung (Stufe C). Werden je Finding nach <strong>Kategorie/Regel</strong> passgenau eingespielt. Vorbefüllt mit rechtlich fundierten Beispielen (VKU-FAQ + BDEW-Gutachten). <strong>Akzeptierte</strong> Umformulierungen werden automatisch als „gelernt“ ergänzt – zum <strong>Vergessen</strong> einfach löschen.</p>
 
       <details class="rule" style="margin:12px 0 16px">
         <summary><span class="tag">＋ Neues Beispiel</span>
@@ -785,6 +785,7 @@ page_head('Admin — EmpCo Greenwashing-Check', $section);
           <details class="rule">
             <summary>
               <span class="tag"><?= h($ex['category']) ?></span>
+              <?php if (($ex['source'] ?? 'manual') === 'learned'): ?><span class="badge info">⇿ gelernt</span><?php else: ?><span class="badge skipped">kuratiert</span><?php endif; ?>
               <?php if (empty($ex['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
               <span class="sum-desc"><?= h(mb_substr((string)$ex['before_text'], 0, 90)) ?></span>
               <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>

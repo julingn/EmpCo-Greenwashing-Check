@@ -146,11 +146,15 @@ function db_init(): void {
             after_text    TEXT,
             note          TEXT,
             active        BOOLEAN DEFAULT TRUE,
+            source        TEXT DEFAULT 'manual', -- manual | learned
+            finding_id    INTEGER,
             created_at    TIMESTAMP DEFAULT NOW()
         )
     ");
     db()->exec("ALTER TABLE training_examples ADD COLUMN IF NOT EXISTS note TEXT");
     db()->exec("ALTER TABLE training_examples ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE");
+    db()->exec("ALTER TABLE training_examples ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'");
+    db()->exec("ALTER TABLE training_examples ADD COLUMN IF NOT EXISTS finding_id INTEGER");
 
     // Einstellungen (z. B. Alt-Werte)
     db()->exec("

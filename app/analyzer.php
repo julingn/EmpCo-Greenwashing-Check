@@ -870,3 +870,30 @@ function generate_reformulation(int $findingId): array {
         return ['kind' => '', 'text' => '', 'error' => 'Umformulierung fehlgeschlagen: ' . $e->getMessage()];
     }
 }
+
+/**
+ * Stufe D: akzeptierte Umformulierung als gelerntes Trainingsbeispiel speichern.
+ * Upsert je Finding (kein Duplikat) mit source='learned'. Un-Learn = Löschen im Admin.
+ */
+function learn_from_reformulation(int $findingId, string $text): void {
+    $text = trim($text);
+    if ($findingId <= 0 || $text === '') { return; }
+    try {
+        $st = db()->prepare("SELECT snippet, category, rule_id FROM findings WHERE id = :id");
+        $st->execute([':id' => $findingId]);
+        $f = $st->fetch();
+        if (!$f) { return; }
+        db()->prepare("DELETE FROM training_examples WHERE finding_id = :f AND source = 'learned'")->execute([':f' => $findingId]);
+        db()->prepare(
+            "INSERT INTO training_examples (category, rule_id, before_text, after_text, note, active, source, finding_id)
+             VALUES (:cat, :rid, :b, :a, :n, TRUE, 'learned', :fid)"
+        )->execute([
+            ':cat' => (string)$f['category'],
+            ':rid' => (string)$f['rule_id'],
+            ':b'   => mb_substr((string)$f['snippet'], 0, 1000),
+            ':a'   => mb_substr($text, 0, 4000),
+            ':n'   => 'Automatisch gelernt aus akzeptierter Umformulierung.',
+            ':fid' => $findingId,
+        ]);
+    } catch (Throwable $e) { /* ignoriert */ }
+}

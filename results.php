@@ -71,6 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'refor
             if ($fidOf > 0) {
                 db()->prepare("DELETE FROM reformulations WHERE finding_id = :f AND id <> :id")
                     ->execute([':f' => $fidOf, ':id' => $rid]);
+                require_once __DIR__ . '/app/analyzer.php';
+                learn_from_reformulation($fidOf, $txt);
             }
         } catch (Throwable $e) { /* ignoriert */ }
     }
