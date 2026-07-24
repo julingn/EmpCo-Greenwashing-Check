@@ -271,13 +271,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 }
 
 /** Bearbeiten-Formular für einen Beleg (leer = neuer Beleg). */
-function evidence_form(array $e = []): void {
+function evidence_form(array $e = [], array $rules = []): void {
     $g = fn(string $k) => h((string)($e[$k] ?? ''));
     $id = (int)($e['id'] ?? 0);
     $isNew = $id === 0;
     $active = $isNew ? true : !empty($e['active']);
     $types = ['Zertifikat', 'Rechtsgrundlage', 'Methodik', 'Freigegebene Aussage'];
     $curType = (string)($e['type'] ?? '');
+    $curRule = (string)($e['rule_id'] ?? '');
+    $ruleIds = array_column($rules, 'rule_id');
+    $cats = [];
+    foreach ($rules as $r) { $c = trim((string)($r['category'] ?? '')); if ($c !== '') { $cats[$c] = true; } }
+    $cats = array_keys($cats);
+    sort($cats);
     ?>
     <form method="post" action="/admin.php?section=evidence">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
@@ -300,11 +306,20 @@ function evidence_form(array $e = []): void {
       <div class="row">
         <div>
           <label>Kategorie (passend zur Regel-Kategorie)</label>
-          <input type="text" name="category" value="<?= $g('category') ?>" placeholder="z. B. pauschalaussage">
+          <input type="text" name="category" value="<?= $g('category') ?>" list="evi-cats-<?= $id ?>" placeholder="z. B. pauschalaussage">
+          <datalist id="evi-cats-<?= $id ?>"><?php foreach ($cats as $c): ?><option value="<?= h($c) ?>"></option><?php endforeach; ?></datalist>
         </div>
         <div>
-          <label>Regel-ID (optional)</label>
-          <input type="text" name="rule_id" value="<?= $g('rule_id') ?>" placeholder="EMPCO-XXX-...">
+          <label>Regel (Verknüpfung, optional)</label>
+          <select name="rule_id">
+            <option value="">— keine Regel —</option>
+            <?php if ($curRule !== '' && !in_array($curRule, $ruleIds, true)): ?>
+              <option value="<?= h($curRule) ?>" selected><?= h($curRule) ?> (nicht mehr vorhanden)</option>
+            <?php endif; ?>
+            <?php foreach ($rules as $r): ?>
+              <option value="<?= h($r['rule_id']) ?>" <?= $curRule === (string)$r['rule_id'] ? 'selected' : '' ?>><?= h($r['rule_id']) ?><?= $r['category'] ? ' · ' . h($r['category']) : '' ?></option>
+            <?php endforeach; ?>
+          </select>
         </div>
       </div>
       <label>Beleg-Inhalt / Nachweis-Text</label>
@@ -620,7 +635,7 @@ page_head('Admin — EmpCo Greenwashing-Check', $section);
         <summary><span class="tag">＋ Neuer Beleg</span>
           <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="rule-body"><?php evidence_form(); ?></div>
+        <div class="rule-body"><?php evidence_form([], $rules); ?></div>
       </details>
 
       <?php if (!$evidence): ?>
@@ -636,7 +651,7 @@ page_head('Admin — EmpCo Greenwashing-Check', $section);
               <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
             </summary>
             <div class="rule-body">
-              <?php evidence_form($e); ?>
+              <?php evidence_form($e, $rules); ?>
               <form method="post" action="/admin.php?section=evidence" style="margin-top:10px" onsubmit="return confirm('Beleg wirklich löschen?')">
                 <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
                 <input type="hidden" name="action" value="delete_evidence">
