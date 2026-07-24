@@ -111,8 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
                     ':r' => mb_substr($url, 0, 500),
                     ':s' => $scope,
                     ':l' => $language,
-                    ':js' => $useJs,
-                    ':ocr' => $useOcr,
+                    ':js' => (int)$useJs,
+                    ':ocr' => (int)$useOcr,
                 ]);
                 $id = (int) $stmt->fetchColumn();
                 prepare_analysis($id, $url, $scope);

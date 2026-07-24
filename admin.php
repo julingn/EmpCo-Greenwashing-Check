@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 ':example_violation' => trim($_POST['example_violation'] ?? ''),
                 ':example_ok'        => trim($_POST['example_ok'] ?? ''),
                 ':law_reference'     => trim($_POST['law_reference'] ?? ''),
-                ':active'            => isset($_POST['active']),
+                ':active'            => (int) isset($_POST['active']),
             ];
             try {
                 if ($id > 0) {
@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                         ':n' => mb_substr($name, 0, 120),
                         ':d' => trim($_POST['description'] ?? ''),
                         ':p' => trim($_POST['prompt'] ?? ''),
-                        ':a' => isset($_POST['active']),
+                        ':a' => (int) isset($_POST['active']),
                         ':id' => $id,
                     ]);
                     $info = 'Redakteur aktualisiert.';
@@ -167,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                         ':n' => mb_substr($name, 0, 120),
                         ':d' => trim($_POST['description'] ?? ''),
                         ':p' => trim($_POST['prompt'] ?? ''),
-                        ':a' => isset($_POST['active']),
+                        ':a' => (int) isset($_POST['active']),
                     ]);
                     $info = 'Redakteur angelegt.';
                 }
@@ -238,7 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 ':content'     => trim($_POST['content'] ?? ''),
                 ':source_url'  => trim($_POST['source_url'] ?? ''),
                 ':valid_until' => trim($_POST['valid_until'] ?? ''),
-                ':active'      => isset($_POST['active']),
+                ':active'      => (int) isset($_POST['active']),
             ];
             try {
                 $eid = (int)($_POST['id'] ?? 0);
@@ -363,7 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 ':before'   => $before,
                 ':after'    => $after,
                 ':note'     => trim($_POST['note'] ?? ''),
-                ':active'   => isset($_POST['active']),
+                ':active'   => (int) isset($_POST['active']),
             ];
             try {
                 $exid = (int)($_POST['id'] ?? 0);
