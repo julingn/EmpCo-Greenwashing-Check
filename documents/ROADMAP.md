@@ -24,12 +24,18 @@
 - ⬜ Ignorieren / Erledigt je Finding
 - ⬜ Export Excel/CSV
 
-## Schritt 4 — Umformulierung
-- ⬜ Vorschläge manuell + KI, akzeptieren/verwerfen
+## Schritt 4 — Nachweisen & Umformulieren (2-Wege-Prozess)
+Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen** (Nachweis vorhanden) oder **(2) umformulieren**.
+- ✅ **Stufe A — Beleg-Bibliothek** im Admin (`evidence`): CRUD wie Regeln, Typ (Zertifikat/Rechtsgrundlage/Methodik/freigegebene Aussage), Verknüpfung über Kategorie/Regel-ID, Quelle/Link, Gültig-bis.
+- ⬜ **Stufe B — Nachweis-Check je Finding:** KI prüft, ob ein passender Beleg vorliegt → Empfehlung *belegen mit X* **oder** *umformulieren* (passende Belege gezielt über Kategorie/Regel in den Prompt laden, nicht alles dumpen).
+- ⬜ **Stufe C — Umformulierung** (bestehender Redakteur) nutzt passende Belege als Kontext; Vorschläge manuell + KI, akzeptieren/verwerfen.
+- ⬜ **Stufe D — Lernfunktion:** akzeptierte Ergebnisse → `training_examples`.
+- Mensch bleibt in der Schleife: Tool schlägt vor, User akzeptiert/verwirft.
 
 ## Admin-Ausbau (geplant)
 - ⬜ **Sidebar-Navigation im Admin** — Bereiche getrennt gelistet und einzeln erreichbar
   - ⬜ **Regeln** (Liste/Editor, Import) als eigener Menüpunkt
+  - ✅ **Belege** — Beleg-Bibliothek (Nachweis-Weg, Stufe A)
   - ⬜ **KI-Redakteure** als eigener Menüpunkt — mehrere Redakteure separat gelistet & konfigurierbar (je Redakteur eigener Prompt)
   - ✅ **Einstellungen** — Admin-Bereich zum Pflegen konkreter **Sitemaps** (werden beim Crawl je Domain genutzt)
   - ⬜ ggf. weitere Bereiche (z. B. Prüf-Archiv)

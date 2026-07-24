@@ -47,7 +47,7 @@ if (empty($_SESSION['admin'])) {
 }
 
 // --- Eingeloggt ---
-$section = in_array($_GET['section'] ?? '', ['rules', 'agents', 'settings'], true) ? $_GET['section'] : 'rules';
+$section = in_array($_GET['section'] ?? '', ['rules', 'evidence', 'agents', 'settings'], true) ? $_GET['section'] : 'rules';
 $error = '';
 $info = '';
 try {
@@ -215,6 +215,118 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             $info = 'Sitemap entfernt.';
         } catch (Throwable $e) { $error = $e->getMessage(); }
     }
+}
+
+// Beleg speichern (neu/bearbeiten)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_evidence') {
+    $section = 'evidence';
+    if (!csrf_check($_POST['csrf'] ?? null)) {
+        $error = 'Ungültiges Formular (CSRF).';
+    } else {
+        $title = trim($_POST['title'] ?? '');
+        if ($title === '') {
+            $error = 'Titel darf nicht leer sein.';
+        } else {
+            $params = [
+                ':title'       => mb_substr($title, 0, 300),
+                ':type'        => trim($_POST['type'] ?? ''),
+                ':category'    => trim($_POST['category'] ?? ''),
+                ':rule_id'     => trim($_POST['rule_id'] ?? ''),
+                ':content'     => trim($_POST['content'] ?? ''),
+                ':source_url'  => trim($_POST['source_url'] ?? ''),
+                ':valid_until' => trim($_POST['valid_until'] ?? ''),
+                ':active'      => isset($_POST['active']),
+            ];
+            try {
+                $eid = (int)($_POST['id'] ?? 0);
+                if ($eid > 0) {
+                    $params[':id'] = $eid;
+                    db()->prepare(
+                        "UPDATE evidence SET title=:title, type=:type, category=:category, rule_id=:rule_id,
+                            content=:content, source_url=:source_url, valid_until=:valid_until, active=:active
+                         WHERE id=:id"
+                    )->execute($params);
+                    $info = 'Beleg aktualisiert.';
+                } else {
+                    db()->prepare(
+                        "INSERT INTO evidence (title, type, category, rule_id, content, source_url, valid_until, active)
+                         VALUES (:title, :type, :category, :rule_id, :content, :source_url, :valid_until, :active)"
+                    )->execute($params);
+                    $info = 'Beleg angelegt.';
+                }
+            } catch (Throwable $e) { $error = $e->getMessage(); }
+        }
+    }
+}
+
+// Beleg löschen
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_evidence') {
+    $section = 'evidence';
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        try {
+            db()->prepare("DELETE FROM evidence WHERE id = :id")->execute([':id' => (int)($_POST['id'] ?? 0)]);
+            $info = 'Beleg gelöscht.';
+        } catch (Throwable $e) { $error = $e->getMessage(); }
+    }
+}
+
+/** Bearbeiten-Formular für einen Beleg (leer = neuer Beleg). */
+function evidence_form(array $e = []): void {
+    $g = fn(string $k) => h((string)($e[$k] ?? ''));
+    $id = (int)($e['id'] ?? 0);
+    $isNew = $id === 0;
+    $active = $isNew ? true : !empty($e['active']);
+    $types = ['Zertifikat', 'Rechtsgrundlage', 'Methodik', 'Freigegebene Aussage'];
+    $curType = (string)($e['type'] ?? '');
+    ?>
+    <form method="post" action="/admin.php?section=evidence">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="action" value="save_evidence">
+      <input type="hidden" name="id" value="<?= $id ?>">
+      <div class="row">
+        <div>
+          <label>Titel</label>
+          <input type="text" name="title" value="<?= $g('title') ?>" required placeholder="z. B. Grüner-Strom-Label-Zertifikat 2026">
+        </div>
+        <div>
+          <label>Typ</label>
+          <select name="type">
+            <?php foreach ($types as $t): ?>
+              <option value="<?= h($t) ?>" <?= $curType === $t ? 'selected' : '' ?>><?= h($t) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Kategorie (passend zur Regel-Kategorie)</label>
+          <input type="text" name="category" value="<?= $g('category') ?>" placeholder="z. B. pauschalaussage">
+        </div>
+        <div>
+          <label>Regel-ID (optional)</label>
+          <input type="text" name="rule_id" value="<?= $g('rule_id') ?>" placeholder="EMPCO-XXX-...">
+        </div>
+      </div>
+      <label>Beleg-Inhalt / Nachweis-Text</label>
+      <textarea name="content" style="min-height:90px" placeholder="Konkreter Nachweis, Zertifikatstext, rechtssichere Formulierung …"><?= $g('content') ?></textarea>
+      <div class="row">
+        <div>
+          <label>Quelle / Link</label>
+          <input type="text" name="source_url" value="<?= $g('source_url') ?>" placeholder="https://…">
+        </div>
+        <div>
+          <label>Gültig bis (optional)</label>
+          <input type="text" name="valid_until" value="<?= $g('valid_until') ?>" placeholder="z. B. 2027-12-31">
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:600">
+        <input type="checkbox" name="active" value="1" <?= $active ? 'checked' : '' ?> style="width:auto"> aktiv
+      </label>
+      <div class="form-actions">
+        <button type="submit"><?= $isNew ? 'Beleg anlegen' : 'Änderungen speichern' ?></button>
+      </div>
+    </form>
+    <?php
 }
 
 // ===== Import-Parser =====
@@ -403,17 +515,19 @@ function agent_form(array $a = []): void {
 $rules = [];
 $agents = [];
 $sitemaps = [];
+$evidence = [];
 try {
     $rules = db()->query("SELECT * FROM rules ORDER BY rule_id")->fetchAll();
     $agents = get_agents();
     $sitemaps = get_sitemaps();
+    $evidence = get_evidence();
 } catch (Throwable $e) { if (!$error) { $error = $e->getMessage(); } }
 
-$secTitle = ['rules' => 'Regeln', 'agents' => 'KI-Redakteure', 'settings' => 'Einstellungen'];
+$secTitle = ['rules' => 'Regeln', 'evidence' => 'Belege', 'agents' => 'KI-Redakteure', 'settings' => 'Einstellungen'];
 page_head('Admin — EmpCo Greenwashing-Check', $section);
 ?>
 <h1><?= h($secTitle[$section] ?? 'Admin') ?></h1>
-<p class="sub">Verwaltung von Regelset, KI-Redakteuren und Sitemaps.</p>
+<p class="sub">Verwaltung von Regelset, Belegen, KI-Redakteuren und Sitemaps.</p>
 
 <?php if ($error): ?><div class="alert err"><?= h($error) ?></div><?php endif; ?>
 <?php if ($info): ?><div class="alert ok"><?= h($info) ?></div><?php endif; ?>
@@ -497,6 +611,42 @@ page_head('Admin — EmpCo Greenwashing-Check', $section);
           </div>
         </details>
       <?php endforeach; ?>
+
+    <?php elseif ($section === 'evidence'): ?>
+
+      <p class="hint" style="margin-top:0">Belege (Zertifikate, Rechtsgrundlagen, Methodik, freigegebene Aussagen), die die KI später zum <strong>Nachweisen</strong> kritischer Aussagen nutzt. Ordne sie über <strong>Kategorie</strong> und/oder <strong>Regel-ID</strong> den passenden Findings zu.</p>
+
+      <details class="rule" style="margin:12px 0 16px">
+        <summary><span class="tag">＋ Neuer Beleg</span>
+          <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="rule-body"><?php evidence_form(); ?></div>
+      </details>
+
+      <?php if (!$evidence): ?>
+        <div class="card"><p class="sub" style="margin:0">Noch keine Belege hinterlegt.</p></div>
+      <?php else: ?>
+        <?php foreach ($evidence as $e): ?>
+          <details class="rule">
+            <summary>
+              <span class="sum-id"><?= h($e['title']) ?></span>
+              <?php if (!empty($e['type'])): ?><span class="tag"><?= h($e['type']) ?></span><?php endif; ?>
+              <?php if (empty($e['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
+              <span class="sum-desc"><?= h($e['category'] ?: $e['rule_id']) ?></span>
+              <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="rule-body">
+              <?php evidence_form($e); ?>
+              <form method="post" action="/admin.php?section=evidence" style="margin-top:10px" onsubmit="return confirm('Beleg wirklich löschen?')">
+                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+                <input type="hidden" name="action" value="delete_evidence">
+                <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
+                <button type="submit" class="btn-ghost btn-sm">Beleg löschen</button>
+              </form>
+            </div>
+          </details>
+        <?php endforeach; ?>
+      <?php endif; ?>
 
     <?php else: ?>
 

@@ -201,6 +201,7 @@ HTML;
     }
     $na = $active === 'analyse' ? ' active' : '';
     $nr = $active === 'rules' ? ' active' : '';
+    $nb = $active === 'evidence' ? ' active' : '';
     $ng = $active === 'agents' ? ' active' : '';
     $nst = $active === 'settings' ? ' active' : '';
     echo <<<HTML
@@ -220,6 +221,10 @@ HTML;
     <a class="nav-item{$nr}" href="/admin.php?section=rules">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="14" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
       Regeln
+    </a>
+    <a class="nav-item{$nb}" href="/admin.php?section=evidence">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+      Belege
     </a>
     <a class="nav-item{$ng}" href="/admin.php?section=agents">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>

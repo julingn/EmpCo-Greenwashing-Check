@@ -155,6 +155,22 @@ function db_init(): void {
         )
     ");
 
+    // Belege / Nachweise (Zertifikate, Rechtsgrundlagen, Methodik) für den Nachweis-Weg
+    db()->exec("
+        CREATE TABLE IF NOT EXISTS evidence (
+            id          SERIAL PRIMARY KEY,
+            title       TEXT NOT NULL,
+            type        TEXT,
+            category    TEXT,
+            rule_id     TEXT,
+            content     TEXT,
+            source_url  TEXT,
+            valid_until TEXT,
+            active      BOOLEAN DEFAULT TRUE,
+            created_at  TIMESTAMP DEFAULT NOW()
+        )
+    ");
+
     // KI-Redakteure (mehrere Agenten, je eigener Prompt)
     db()->exec("
         CREATE TABLE IF NOT EXISTS agents (
@@ -205,6 +221,15 @@ function setting_set(string $key, string $value): void {
 function get_sitemaps(): array {
     try {
         return db()->query("SELECT * FROM sitemaps ORDER BY id")->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/** Liste der im Admin gepflegten Belege/Nachweise. */
+function get_evidence(): array {
+    try {
+        return db()->query("SELECT * FROM evidence ORDER BY title")->fetchAll();
     } catch (Throwable $e) {
         return [];
     }
