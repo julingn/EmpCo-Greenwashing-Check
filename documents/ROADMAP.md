@@ -57,6 +57,7 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
   - Optional: aus wiederkehrenden Fehltreffern eine Ausschluss-/Kontextregel je Trigger ableiten.
   - **Wichtig:** Erfassung der Fehltreffer-Signale möglichst früh starten, damit später Trainingsdaten vorhanden sind.
 - ✅ **Historie / Archiv mehrerer Prüfläufe** — Seite `archive.php` (Sidebar „Prüf-Archiv") listet alle Läufe (Quelle, Umfang, Seiten, JS/OCR, Status, Datum, Findings-Ampel); Ergebnis erneut öffnen oder Lauf löschen (kaskadiert).
+- ⬜ **Preview-Treffergenauigkeit** — die Fundstellen-Vorschau (Screenshot) markiert/zeigt teils **nicht die korrekte Stelle**. Ursache: DOM-Textsuche ungenau bei Snippets mit „…", Zeilenumbrüchen, über mehrere Textknoten aufgeteiltem Text oder JS-Seiten. Verbessern: mehrstufige Teilstring-/Fuzzy-Suche, robustere Normalisierung, Treffer über mehrere Textknoten hinweg, ggf. gezielter Element-Ausschnitt statt ganzem Viewport.
 - ⬜ Suchmetriken/Filter für Content-Bausteine
 
 ## Notiz
