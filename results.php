@@ -49,6 +49,8 @@ $sevLabel = ['violation' => 'Verstoß', 'warn' => 'Prüfen', 'info' => 'Hinweis'
 $statusLabel = ['open' => 'offen', 'ignored' => 'ignoriert', 'done' => 'erledigt'];
 $checkLabel = ['text' => 'Text', 'code' => 'Code', 'js' => 'JS', 'ocr' => 'OCR'];
 $scopeLabel = ['exact' => 'Nur exakte URL', 'depth1' => 'Tiefe 1', 'depth2' => 'Tiefe 2', 'full' => 'Ganze Domain'];
+$pageUrls = [];
+foreach ($pages as $pg) { $pageUrls[(int)$pg['id']] = (string)$pg['url']; }
 $counts = ['open' => 0, 'ignored' => 0, 'done' => 0];
 foreach ($findings as $ff) { $counts[$ff['status']] = ($counts[$ff['status']] ?? 0) + 1; }
 $sevCounts = ['violation' => 0, 'warn' => 0, 'info' => 0];
@@ -184,11 +186,14 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         $sev = $f['severity'];
         $st  = $f['status'];
         $resolved = $st !== 'open' ? ' resolved' : '';
+        $pgUrl = $pageUrls[(int)$f['page_id']] ?? '';
+        $pgPath = $pgUrl !== '' ? (parse_url($pgUrl, PHP_URL_PATH) ?: '/') : '';
     ?>
       <div class="finding <?= h($sev) . $resolved ?>">
         <div class="finding-head">
           <span class="sev-name"><?= h($sevLabel[$sev] ?? $sev) ?></span>
           <span class="finding-cat"><?= h($f['category']) ?></span>
+          <?php if (count($pages) > 1 && $pgUrl !== ''): ?><a class="finding-page" href="<?= h($pgUrl) ?>" target="_blank" rel="noopener" title="<?= h($pgUrl) ?>">↗ <?= h($pgPath) ?></a><?php endif; ?>
           <?php if ($st !== 'open'): ?><span class="finding-status">· <?= h($statusLabel[$st] ?? $st) ?></span><?php endif; ?>
           <span class="finding-meta"><?= h($f['rule_id']) ?><br><?= h($f['content_type']) ?></span>
         </div>

@@ -17,7 +17,7 @@ try {
     $analysis = $a->fetch();
     if (!$analysis) { http_response_code(404); exit('Prüflauf nicht gefunden.'); }
 
-    $f = db()->prepare("SELECT * FROM findings WHERE analysis_id = :id ORDER BY status, severity, category, rule_id");
+    $f = db()->prepare("SELECT f.*, p.url AS page_url FROM findings f LEFT JOIN pages p ON p.id = f.page_id WHERE f.analysis_id = :id ORDER BY f.status, f.severity, f.category, f.rule_id");
     $f->execute([':id' => $id]);
     $findings = $f->fetchAll();
 } catch (Throwable $e) {
@@ -39,7 +39,7 @@ $delim = ';';
 fputcsv($out, ['Quelle', $analysis['source_ref']], $delim);
 fputcsv($out, ['Umfang', $analysis['scope'], 'Sprache', $analysis['language'], 'Datum', $analysis['created_at']], $delim);
 fputcsv($out, [], $delim);
-fputcsv($out, ['Rule-ID', 'Kategorie', 'Schweregrad', 'Status', 'Inhaltsart', 'Fundstelle', 'Begründung'], $delim);
+fputcsv($out, ['Rule-ID', 'Kategorie', 'Schweregrad', 'Status', 'Inhaltsart', 'Seite', 'Fundstelle', 'Begründung'], $delim);
 
 foreach ($findings as $r) {
     fputcsv($out, [
@@ -48,6 +48,7 @@ foreach ($findings as $r) {
         $sevLabel[$r['severity']] ?? $r['severity'],
         $statusLabel[$r['status']] ?? $r['status'],
         $r['content_type'],
+        $r['page_url'] ?? '',
         $r['snippet'],
         $r['assessment'],
     ], $delim);

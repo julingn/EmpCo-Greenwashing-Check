@@ -133,6 +133,10 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   .finding.info .sev-name{color:var(--accent)}
   .finding-cat{font-size:12px;font-weight:600;color:var(--text2);background:var(--bg);
         border:1px solid var(--border);padding:2px 9px;border-radius:6px}
+  .finding-page{font-size:12px;font-weight:500;color:var(--accent);background:var(--accent-bg);
+        border:1px solid var(--accent-border);padding:2px 9px;border-radius:6px;text-decoration:none;
+        max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
+  .finding-page:hover{background:var(--accent-border)}
   .finding-meta{margin-left:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
         font-size:11px;color:var(--text3);text-align:right}
   .finding-status{font-size:12px;font-weight:700;color:var(--green)}
