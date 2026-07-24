@@ -115,7 +115,7 @@ try {
 $sevLabel = ['violation' => 'Verstoß', 'warn' => 'Prüfen', 'info' => 'Hinweis'];
 $statusLabel = ['open' => 'offen', 'ignored' => 'ignoriert', 'done' => 'erledigt'];
 $checkLabel = ['text' => 'Text', 'code' => 'Code', 'js' => 'JS', 'ocr' => 'OCR'];
-$scopeLabel = ['exact' => 'Nur exakte URL', 'depth1' => 'Tiefe 1', 'depth2' => 'Tiefe 2', 'full' => 'Ganze Domain'];
+$scopeLabel = ['exact' => 'Nur exakte URL', 'depth1' => 'Tiefe 1', 'depth2' => 'Tiefe 2', 'full' => 'Ganze Domain', 'pdf' => 'PDF-Dokument'];
 $pageUrls = [];
 foreach ($pages as $pg) { $pageUrls[(int)$pg['id']] = (string)$pg['url']; }
 $counts = ['open' => 0, 'ignored' => 0, 'done' => 0];
@@ -261,6 +261,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         <div class="finding-head">
           <span class="sev-name"><?= h($sevLabel[$sev] ?? $sev) ?></span>
           <span class="finding-cat"><?= h($f['category']) ?></span>
+          <?php if (preg_match('#^https?://#i', (string)$pgUrl)): ?>
           <span class="preview-wrap">
             <button type="button" class="preview-btn" aria-label="Vorschau der Fundstelle">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -271,6 +272,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
               <img alt="Fundstelle" data-src="/preview.php?fid=<?= (int)$f['id'] ?>">
             </span>
           </span>
+          <?php endif; ?>
           <?php if (count($pages) > 1 && $pgUrl !== ''): ?><a class="finding-page" href="<?= h($pgUrl) ?>" target="_blank" rel="noopener" title="<?= h($pgUrl) ?>">↗ <?= h($pgPath) ?></a><?php endif; ?>
           <?php if ($st !== 'open'): ?><span class="finding-status">· <?= h($statusLabel[$st] ?? $st) ?></span><?php endif; ?>
           <span class="finding-meta"><?= h($f['rule_id']) ?><br><?= h($f['content_type']) ?></span>

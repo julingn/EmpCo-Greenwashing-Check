@@ -74,6 +74,47 @@ function scope_config(string $scope): array {
     };
 }
 
+/** Extrahiert Text aus einem PDF (poppler-utils / pdftotext). */
+function extract_pdf_text(string $path): string {
+    $cmd = 'pdftotext -enc UTF-8 -q ' . escapeshellarg($path) . ' - 2>/dev/null';
+    $out = @shell_exec($cmd);
+    if (!is_string($out)) { $out = ''; }
+    $out = preg_replace('/\s+/u', ' ', $out) ?? $out;
+    return trim((string)$out);
+}
+
+/** Bereitet eine PDF-Analyse vor: Text extrahieren → Seite + Kandidaten (kein Crawl). */
+function prepare_pdf_analysis(int $analysisId, string $pdfPath, string $filename): array {
+    $text = extract_pdf_text($pdfPath);
+    $checks = ['text' => $text !== '' ? 'ok' : 'failed', 'code' => 'skipped', 'js' => 'skipped', 'ocr' => 'skipped'];
+
+    $stmt = db()->prepare(
+        "INSERT INTO pages (analysis_id, url, depth, status, checks)
+         VALUES (:a, :u, 0, 'fetched', :c) RETURNING id"
+    );
+    $stmt->execute([':a' => $analysisId, ':u' => mb_substr('PDF: ' . $filename, 0, 500), ':c' => json_encode($checks)]);
+    $pageId = (int) $stmt->fetchColumn();
+
+    if ($text === '') {
+        db()->prepare("UPDATE analyses SET status='done' WHERE id=:id")->execute([':id' => $analysisId]);
+        return ['total' => 0];
+    }
+
+    $rules = db()->query("SELECT * FROM rules WHERE active ORDER BY rule_id")->fetchAll();
+    $cands = build_candidates($rules, $text, []);
+    $ins = db()->prepare(
+        "INSERT INTO candidates (analysis_id, page_id, rule_id, category, content_type, snippet)
+         VALUES (:a, :p, :rid, :cat, :ct, :snip)"
+    );
+    foreach ($cands as $c) {
+        $ins->execute([
+            ':a' => $analysisId, ':p' => $pageId, ':rid' => $c['rule_id'],
+            ':cat' => $c['category'], ':ct' => $c['content_type'], ':snip' => mb_substr($c['snippet'], 0, 1000),
+        ]);
+    }
+    return ['total' => count($cands)];
+}
+
 /** Normalisiert einen Host (führendes www. entfernen). */
 function norm_host(string $h): string {
     return preg_replace('#^www\.#i', '', strtolower($h)) ?? strtolower($h);

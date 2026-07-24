@@ -45,7 +45,7 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
 - ⬜ Grundlage für mehrere spezialisierte KI-Redakteure (z. B. je Kategorie oder Tone-of-Voice)
 
 ## Später
-- ⬜ **PDF auslesen als Quelle** (statt/zusätzlich zur URL) — Upload eines PDF, Textextraktion + Prüfung wie bei URLs
+- ✅ **PDF auslesen als Quelle** — Upload eines PDF auf der Startseite (alternativ zur URL); Textextraktion via `pdftotext` (poppler-utils), dann Prüfung gegen die Regeln wie bei URLs (kein Crawl). Upload-Limit 25 MB.
 - ⬜ **Verlaufsvergleich / Trend pro URL** — jeden Prüflauf als Snapshot im Archiv; bei erneuter Prüfung derselben URL Findings gegen früheren Lauf matchen (Schlüssel: rule_id + normalisierter Ausschnitt) → **behoben / neu / unverändert** + Trend (Verbesserung/Verschlechterung vs. Datum). Ziel: nach Seitenüberarbeitung positive/negative Entwicklung sichtbar machen.
 - ⬜ Bilder/OCR (Umweltaussagen/Siegel in Grafiken)
 - ✅ **TLD-Crawl (Tiefe 1/2/ganze Domain)** — inkrementeller Crawler in `process_step` (Phase 1 lesen, Phase 2 KI-Bewertung). Tiefe = **relative Pfad-Tiefe unter der Ausgangs-URL** (z. B. Seed `/gas` → Tiefe 1 nur `/gas/*`, Tiefe 2 bis `/gas/*/*`), „Ganze Domain" = alle Seiten des Hosts. Seiten-Erkennung per Seiten-Links **plus Sitemap** (robots.txt + `/sitemap.xml` + Admin-gepflegte Sitemaps, inkl. Sitemap-Index). Same-Site-Filter (ohne www), Query/Fragment-Normalisierung, Seiten-Obergrenzen (T1=25, T2=50, Domain=80). Offen: Subdomains gelten als fremde Seite; JS-gerenderte Links werden nur über die Sitemap gefunden.
