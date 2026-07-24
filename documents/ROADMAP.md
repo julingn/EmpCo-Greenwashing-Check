@@ -13,30 +13,32 @@
 - ✅ Regel-Import (xlsx **und** CSV) + Regeln tabellarisch editierbar im Admin
 - ✅ KI-Redakteur-Prompt im Admin editierbar
 
-## Schritt 2 — Analyse-Engine (als Nächstes)
-- ⬜ Eine URL auslesen (Text + Code/HTML)
-- ⬜ Prüfung gegen Regeln: Trigger-Begriffe + KI-Kontextbewertung
-- ⬜ Prüf-Status anzeigen (Text / Code / JS / OCR)
-- ⬜ Findings speichern
+## Schritt 2 — Analyse-Engine (erledigt, live)
+- ✅ Eine URL auslesen (Text + Code/HTML)
+- ✅ Prüfung gegen Regeln: Trigger-Begriffe + KI-Kontextbewertung
+- ✅ Prüf-Status anzeigen (Text / Code aktiv · JS / OCR folgen später)
+- ✅ Findings speichern
 
-## Schritt 3 — Ergebnisse
-- ⬜ Findings strukturiert (Kategorie, Ampel konform/prüfen/Verstoß)
-- ⬜ Ignorieren / Erledigt je Finding
-- ⬜ Export Excel/CSV
+## Schritt 3 — Ergebnisse (erledigt, live)
+- ✅ Findings strukturiert (Kategorie, Ampel Verstoß/Prüfen/Hinweis) + Donut-Übersicht
+- ✅ Ignorieren / Erledigt je Finding
+- ✅ Export Excel/CSV (inkl. Seite/Fundort je Finding)
 
 ## Schritt 4 — Nachweisen & Umformulieren (2-Wege-Prozess)
 Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen** (Nachweis vorhanden) oder **(2) umformulieren**.
 - ✅ **Stufe A — Beleg-Bibliothek** im Admin (`evidence`): CRUD wie Regeln, Typ (Zertifikat/Rechtsgrundlage/Methodik/freigegebene Aussage), Verknüpfung über Kategorie/Regel-ID, Quelle/Link, Gültig-bis.
 - ✅ **Stufe B — Nachweis-Check je Finding:** on-demand pro Finding (Button „Nachweis prüfen"). Belege werden gezielt über **Regel-ID-Liste ODER Kategorie** gematcht; ohne Treffer direkt *nicht belegbar* (kein KI-Aufruf), mit Treffer entscheidet die KI zwischen *belegbar / belegt_anpassen / nicht_belegbar* (JSON). Ergebnis + Begründung wird am Finding gespeichert und in der Ergebnis-Ansicht angezeigt.
-- ⬜ **Stufe C — Umformulierung** (bestehender Redakteur) nutzt passende Belege als Kontext; Vorschläge manuell + KI, akzeptieren/verwerfen.
+- ✅ **Beispiel-Bibliothek (Few-Shot)** im Admin (`training_examples`): Vorher/Nachher-Beispiele je Kategorie/Regel (Mehrfach-Regel-Verknüpfung), vorbefüllt mit **rechtlich fundierten** Beispielen aus VKU-FAQ + BDEW-Ökostrom-Gutachten (u. a. „Ökostrom → 100 % Strom aus erneuerbaren Energien", Drei-Schritt-Ansatz). Basis für Stufe C und D.
+- ⬜ **Stufe C — Umformulierung** (bestehender Redakteur) nutzt passende Belege **und Beispiele** als Kontext; Vorschläge manuell + KI, akzeptieren/verwerfen.
 - ⬜ **Stufe D — Lernfunktion:** akzeptierte Ergebnisse → `training_examples`.
 - Mensch bleibt in der Schleife: Tool schlägt vor, User akzeptiert/verwirft.
 
 ## Admin-Ausbau (geplant)
-- ⬜ **Sidebar-Navigation im Admin** — Bereiche getrennt gelistet und einzeln erreichbar
-  - ⬜ **Regeln** (Liste/Editor, Import) als eigener Menüpunkt
+- ✅ **Sidebar-Navigation im Admin** (LAT-Stil, global) — Bereiche getrennt gelistet und einzeln erreichbar
+  - ✅ **Regeln** (Liste/Editor, Import) als eigener Menüpunkt
   - ✅ **Belege** — Beleg-Bibliothek (Nachweis-Weg, Stufe A)
-  - ⬜ **KI-Redakteure** als eigener Menüpunkt — mehrere Redakteure separat gelistet & konfigurierbar (je Redakteur eigener Prompt)
+  - ✅ **Beispiele** — Vorher/Nachher-Bibliothek (Few-Shot, Basis für Stufe C/D)
+  - ✅ **KI-Redakteure** als eigener Menüpunkt — mehrere Redakteure separat gelistet & konfigurierbar (je Redakteur eigener Prompt)
   - ✅ **Einstellungen** — Admin-Bereich zum Pflegen konkreter **Sitemaps** (werden beim Crawl je Domain genutzt)
   - ⬜ ggf. weitere Bereiche (z. B. Prüf-Archiv)
 - ⬜ Grundlage für mehrere spezialisierte KI-Redakteure (z. B. je Kategorie oder Tone-of-Voice)

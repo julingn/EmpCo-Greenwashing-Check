@@ -132,7 +132,7 @@ function db_init(): void {
         )
     ");
 
-    // Trainingsbeispiele (akzeptierte Umformulierungen — Stufe 4)
+    // Trainingsbeispiele / Vorher-Nachher (Few-Shot für Umformulierung, Stufe C+D)
     db()->exec("
         CREATE TABLE IF NOT EXISTS training_examples (
             id            SERIAL PRIMARY KEY,
@@ -140,9 +140,13 @@ function db_init(): void {
             rule_id       TEXT,
             before_text   TEXT,
             after_text    TEXT,
+            note          TEXT,
+            active        BOOLEAN DEFAULT TRUE,
             created_at    TIMESTAMP DEFAULT NOW()
         )
     ");
+    db()->exec("ALTER TABLE training_examples ADD COLUMN IF NOT EXISTS note TEXT");
+    db()->exec("ALTER TABLE training_examples ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE");
 
     // Einstellungen (z. B. Alt-Werte)
     db()->exec("
@@ -205,6 +209,12 @@ function db_init(): void {
             ':p' => $prompt,
         ]);
     }
+
+    // Vorher/Nachher-Beispiele einmalig befüllen (rechtlich fundiert: VKU-FAQ + BDEW-Gutachten)
+    $hasExamples = (int) db()->query("SELECT COUNT(*) FROM training_examples")->fetchColumn();
+    if ($hasExamples === 0) {
+        seed_training_examples();
+    }
 }
 
 /** Liest einen Einstellungswert (mit Default). */
@@ -239,6 +249,80 @@ function get_evidence(): array {
         return db()->query("SELECT * FROM evidence ORDER BY title")->fetchAll();
     } catch (Throwable $e) {
         return [];
+    }
+}
+
+/** Liste der Vorher/Nachher-Beispiele. */
+function get_examples(): array {
+    try {
+        return db()->query("SELECT * FROM training_examples ORDER BY category, id")->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/** Befüllt die Beispiel-Bibliothek einmalig mit rechtlich fundierten Vorher/Nachher-Beispielen. */
+function seed_training_examples(): void {
+    $examples = [
+        ['pauschalaussage', 'EMPCO-006-OEKOSTROM-GENERISCH, EMPCO-052-100-PROZENT-ERNEUERBAR',
+            '100 % Ökostrom für Ihr Zuhause – gut für die Umwelt.',
+            'Ökostrom – 100 % Strom aus erneuerbaren Energien.',
+            'BDEW-Gutachten „Vorgehensweise 2“: „Ökostrom“ ist eine allgemeine Umweltaussage (Nr. 4a UWG n.F.) und muss auf demselben Medium klar und hervorgehoben spezifiziert werden. Mindestmaß: Herkunft „aus erneuerbaren Energien“ (gesetzlich definiert, § 3 Nr. 21 EEG 2023). Gem. Erwägungsgrund 9 EmpCo ausreichend.'],
+        ['pauschalaussage', 'EMPCO-006-OEKOSTROM-GENERISCH',
+            'Ökostrom',
+            'Ökostrom – 100 % Strom aus erneuerbaren Energien.* *Physikalisch kann bei der Nutzung öffentlicher Stromnetze nicht sichergestellt werden, dass der konkrete Strom, den Sie verbrauchen, aus Kraftwerken mit erneuerbaren Energien stammt. Durch Einkauf und Entwertung von Herkunftsnachweisen wird jedoch sichergestellt, dass eine aus erneuerbaren Energien erzeugte Strommenge nur einmal unter dieser Kennzeichnung entnommen werden kann. Herkunftsnachweise können auch aus anderen europäischen Ländern stammen (siehe Stromkennzeichnung). Weitere Informationen: [LINK]',
+            'BDEW-Gutachten „Vorgehensweise 3“ (Drei-Schritt-Ansatz: Claim → Erläuterung → Weblink/QR-Code). Beseitigt auch das Restrisiko der systemischen Herkunftsnachweis-Kritik.'],
+        ['pauschalaussage', 'EMPCO-001-PAUSCHAL-UMWELT',
+            'Mit unserem umweltfreundlichen Stromtarif tun Sie etwas Gutes für die Natur.',
+            'Unser Stromtarif besteht zu 100 % aus Strom aus erneuerbaren Energien (Herkunftsnachweise gem. § 42 EnWG, siehe Stromkennzeichnung).',
+            '„umweltfreundlich“ ist eine allgemeine Umweltaussage (Nr. 4a) ohne nachweisbare anerkannte hervorragende Umweltleistung → durch spezifische, belegbare Herkunftsangabe ersetzen.'],
+        ['pauschalaussage', 'EMPCO-002-PAUSCHAL-KLIMA',
+            'Unser klimafreundliches Gasangebot für Ihr Zuhause.',
+            'Unser Gasangebot enthält 30 % Biomethan aus regionalen Anlagen (Emissionsfaktor 110 g CO₂eq/kWh ggü. 245 g CO₂eq/kWh bei Erdgas; Methodik: GHG-Protocol Scope 1+3).',
+            'Pauschales „klimafreundlich“ (Nr. 4a) durch konkrete, belegte Kennzahl mit Methodik ersetzen.'],
+        ['pauschalaussage', 'EMPCO-004-PAUSCHAL-NACHHALTIG',
+            'Nachhaltige Energieversorgung für die Region.',
+            'Unsere Erzeugung erreichte 2025 einen Anteil von 38 % erneuerbarer Energien (Bilanzkreis-Nachweis).',
+            '„nachhaltig“ (Nr. 4a) durch konkrete, überprüfbare Kennzahl ersetzen.'],
+        ['klimaneutralitaet_kompensation', 'EMPCO-020-KLIMANEUTRAL-PRODUKT, EMPCO-021-KLIMANEUTRALES-GAS',
+            'Unser klimaneutraler Strom – durch Kompensation in zertifizierten Klimaschutzprojekten.',
+            'Für unsere Energieprodukte treffen wir keine Klimaneutralitäts-Aussage. Über unsere Investitionen in Klimaschutzprojekte informieren wir transparent unter [LINK] – ohne die Bezeichnung „klimaneutral“.',
+            'Produktbezogene Kompensations-/Klimaneutralitäts-Aussagen sind per se verboten (Nr. 4c). Werbung für Investitionen in Umweltinitiativen bleibt zulässig, aber nicht mit „klimaneutral“ (VKU-FAQ 12c).'],
+        ['teil_zu_gesamt', 'EMPCO-050-TEIL-AUF-GESAMT',
+            'Klimafreundliche Stadtwerke.',
+            'Unsere Fernwärmeversorgung stammt zu 48 % aus erneuerbaren Quellen (Geothermie, Biomasse; Stand 2025).',
+            'Reichweiten-Verbot (Nr. 4b): Aussage nur auf die Sparte beziehen, die die Eigenschaft tatsächlich belegt (VKU-FAQ 12b, Beispiel 2).'],
+        ['teil_zu_gesamt', 'EMPCO-051-GRUENE-FERNWAERME',
+            'Grüne Fernwärme für Mannheim.',
+            'Unsere Fernwärme stammt zu 48 % aus erneuerbaren Quellen (Geothermie, Biomasse) und zu 52 % aus Erdgas-KWK (Stand 2025; Ziel: 65 % EE bis 2030).',
+            'Wärmemix transparent und anteilig ausweisen statt pauschal „grün“ (Nr. 4a + 4b).'],
+        ['teil_zu_gesamt', 'EMPCO-050-TEIL-AUF-GESAMT',
+            'Mit Recyclingmaterial hergestellt.',
+            'Die Verpackung besteht zu 100 % aus Recyclingmaterial.',
+            'VKU-FAQ 12b, Beispiel 1 – Reichweite klarstellen, wenn nur ein Teil (Verpackung) die Eigenschaft erfüllt.'],
+        ['teil_zu_gesamt', 'EMPCO-051-GRUENE-FERNWAERME, EMPCO-002-PAUSCHAL-KLIMA',
+            'Klimaneutrale Fernwärme.',
+            'Fernwärme aus hocheffizienter Kraft-Wärme-Kopplung (KWK) im Sinne der EU-Energieeffizienzrichtlinie 2023/1791 (Art. 2 Nr. 40).',
+            'VKU-FAQ 15b – allgemeine Aussage durch Hinweis auf den Energieträger bzw. einen gesetzlich definierten Begriff spezifizieren (z. B. KWK, effiziente Fernwärme, Umweltwärme).'],
+        ['zukunftsversprechen', 'EMPCO-040-FUTURE-CLAIM',
+            'Wir sind klimaneutral bis 2040.',
+            'Wir verfolgen das Ziel der Konzern-Klimaneutralität (Scope 1+2) bis 2040 gemäß unserem öffentlich einsehbaren Umsetzungsplan mit messbaren Zwischenzielen (–30 % bis 2027, –60 % bis 2032). Der Plan wird regelmäßig von einem unabhängigen externen Sachverständigen geprüft (Ergebnisse: [LINK]).',
+            '§ 5 Abs. 3 Nr. 4 UWG n.F. / VKU-FAQ 13 – Zukunftsaussage nur mit klaren, öffentlich einsehbaren, überprüfbaren Verpflichtungen in einem detaillierten Umsetzungsplan + externer Prüfung.'],
+        ['eigene_siegel', 'EMPCO-030-EIGENSIEGEL',
+            'Mit dem MVV-Eco-Siegel ausgezeichnet.',
+            'Ausgezeichnet mit dem Grüner-Strom-Label (zertifiziert durch Grüner Strom Label e. V. – unabhängiges Zertifizierungssystem).',
+            'Nr. 2a – Nachhaltigkeitssiegel muss auf einem Zertifizierungssystem beruhen oder staatlich festgesetzt sein; Eigen-Siegel ohne Drittprüfung unzulässig (VKU-FAQ 12d).'],
+        ['gesetzeskonformitaet_als_usp', 'EMPCO-060-GESETZ-ALS-USP',
+            'Unser Stromtarif erfüllt alle gesetzlichen EE-Quoten – ein klares Plus für Sie.',
+            'Hinweis zur Stromkennzeichnung: Unser Bundes-Mix entspricht den Vorgaben des § 42 EnWG.',
+            'Nr. 10a – gesetzlich vorgeschriebene Eigenschaften nicht als besonderes Verkaufsargument („USP“) darstellen; reine Pflichtinformation.'],
+    ];
+    $stmt = db()->prepare(
+        "INSERT INTO training_examples (category, rule_id, before_text, after_text, note, active)
+         VALUES (:cat, :rid, :b, :a, :n, TRUE)"
+    );
+    foreach ($examples as $e) {
+        $stmt->execute([':cat' => $e[0], ':rid' => $e[1], ':b' => $e[2], ':a' => $e[3], ':n' => $e[4]]);
     }
 }
 

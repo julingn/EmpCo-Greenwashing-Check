@@ -47,7 +47,7 @@ if (empty($_SESSION['admin'])) {
 }
 
 // --- Eingeloggt ---
-$section = in_array($_GET['section'] ?? '', ['rules', 'evidence', 'agents', 'settings'], true) ? $_GET['section'] : 'rules';
+$section = in_array($_GET['section'] ?? '', ['rules', 'evidence', 'examples', 'agents', 'settings'], true) ? $_GET['section'] : 'rules';
 $error = '';
 $info = '';
 try {
@@ -343,6 +343,109 @@ function evidence_form(array $e = [], array $rules = []): void {
     <?php
 }
 
+// Beispiel speichern (neu/bearbeiten)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_example') {
+    $section = 'examples';
+    if (!csrf_check($_POST['csrf'] ?? null)) {
+        $error = 'Ungültiges Formular (CSRF).';
+    } else {
+        $before = trim($_POST['before_text'] ?? '');
+        $after  = trim($_POST['after_text'] ?? '');
+        if ($before === '' || $after === '') {
+            $error = 'Vorher und Nachher dürfen nicht leer sein.';
+        } else {
+            $ruleSel = $_POST['rule_ids'] ?? [];
+            if (!is_array($ruleSel)) { $ruleSel = []; }
+            $ruleSel = array_values(array_unique(array_filter(array_map('trim', $ruleSel))));
+            $params = [
+                ':category' => trim($_POST['category'] ?? ''),
+                ':rule_id'  => mb_substr(implode(', ', $ruleSel), 0, 2000),
+                ':before'   => $before,
+                ':after'    => $after,
+                ':note'     => trim($_POST['note'] ?? ''),
+                ':active'   => isset($_POST['active']),
+            ];
+            try {
+                $exid = (int)($_POST['id'] ?? 0);
+                if ($exid > 0) {
+                    $params[':id'] = $exid;
+                    db()->prepare(
+                        "UPDATE training_examples SET category=:category, rule_id=:rule_id, before_text=:before,
+                            after_text=:after, note=:note, active=:active WHERE id=:id"
+                    )->execute($params);
+                    $info = 'Beispiel aktualisiert.';
+                } else {
+                    db()->prepare(
+                        "INSERT INTO training_examples (category, rule_id, before_text, after_text, note, active)
+                         VALUES (:category, :rule_id, :before, :after, :note, :active)"
+                    )->execute($params);
+                    $info = 'Beispiel angelegt.';
+                }
+            } catch (Throwable $e) { $error = $e->getMessage(); }
+        }
+    }
+}
+
+// Beispiel löschen
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_example') {
+    $section = 'examples';
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        try {
+            db()->prepare("DELETE FROM training_examples WHERE id = :id")->execute([':id' => (int)($_POST['id'] ?? 0)]);
+            $info = 'Beispiel gelöscht.';
+        } catch (Throwable $e) { $error = $e->getMessage(); }
+    }
+}
+
+/** Bearbeiten-Formular für ein Vorher/Nachher-Beispiel (leer = neu). */
+function example_form(array $ex = [], array $rules = []): void {
+    $g = fn(string $k) => h((string)($ex[$k] ?? ''));
+    $id = (int)($ex['id'] ?? 0);
+    $isNew = $id === 0;
+    $active = $isNew ? true : !empty($ex['active']);
+    $curRules = array_values(array_filter(array_map('trim', explode(',', (string)($ex['rule_id'] ?? '')))));
+    $ruleIds = array_map('strval', array_column($rules, 'rule_id'));
+    $orphanRules = array_values(array_diff($curRules, $ruleIds));
+    $cats = [];
+    foreach ($rules as $r) { $c = trim((string)($r['category'] ?? '')); if ($c !== '') { $cats[$c] = true; } }
+    $cats = array_keys($cats);
+    sort($cats);
+    ?>
+    <form method="post" action="/admin.php?section=examples">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="action" value="save_example">
+      <input type="hidden" name="id" value="<?= $id ?>">
+      <label>Kategorie</label>
+      <input type="text" name="category" value="<?= $g('category') ?>" list="ex-cats-<?= $id ?>" placeholder="z. B. pauschalaussage">
+      <datalist id="ex-cats-<?= $id ?>"><?php foreach ($cats as $c): ?><option value="<?= h($c) ?>"></option><?php endforeach; ?></datalist>
+
+      <label>Regeln (Verknüpfung, Mehrfachauswahl)</label>
+      <div class="checklist">
+        <?php foreach ($orphanRules as $orph): ?>
+          <label class="checklist-item"><input type="checkbox" name="rule_ids[]" value="<?= h($orph) ?>" checked> <span><strong><?= h($orph) ?></strong> <span class="hint" style="margin:0">(nicht mehr vorhanden)</span></span></label>
+        <?php endforeach; ?>
+        <?php foreach ($rules as $r): $rid = (string)$r['rule_id']; ?>
+          <label class="checklist-item"><input type="checkbox" name="rule_ids[]" value="<?= h($rid) ?>" <?= in_array($rid, $curRules, true) ? 'checked' : '' ?>> <span><strong><?= h($rid) ?></strong><?= $r['category'] ? ' · ' . h($r['category']) : '' ?></span></label>
+        <?php endforeach; ?>
+        <?php if (!$rules && !$orphanRules): ?><span class="hint" style="margin:0;padding:6px 8px;display:block">Noch keine Regeln vorhanden.</span><?php endif; ?>
+      </div>
+
+      <label>Vorher (beanstandete Formulierung)</label>
+      <textarea name="before_text" style="min-height:70px" placeholder="Die kritische Aussage …"><?= $g('before_text') ?></textarea>
+      <label>Nachher (konforme Formulierung)</label>
+      <textarea name="after_text" style="min-height:90px" placeholder="Die rechtskonforme Umformulierung …"><?= $g('after_text') ?></textarea>
+      <label>Begründung / Beleg (optional)</label>
+      <textarea name="note" style="min-height:60px" placeholder="Warum konform, welche Rechtsgrundlage/Quelle …"><?= $g('note') ?></textarea>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:600">
+        <input type="checkbox" name="active" value="1" <?= $active ? 'checked' : '' ?> style="width:auto"> aktiv
+      </label>
+      <div class="form-actions">
+        <button type="submit"><?= $isNew ? 'Beispiel anlegen' : 'Änderungen speichern' ?></button>
+      </div>
+    </form>
+    <?php
+}
+
 // ===== Import-Parser =====
 function parse_csv_rows(string $path): array {
     $raw = file_get_contents($path);
@@ -530,14 +633,16 @@ $rules = [];
 $agents = [];
 $sitemaps = [];
 $evidence = [];
+$examples = [];
 try {
     $rules = db()->query("SELECT * FROM rules ORDER BY rule_id")->fetchAll();
     $agents = get_agents();
     $sitemaps = get_sitemaps();
     $evidence = get_evidence();
+    $examples = get_examples();
 } catch (Throwable $e) { if (!$error) { $error = $e->getMessage(); } }
 
-$secTitle = ['rules' => 'Regeln', 'evidence' => 'Belege', 'agents' => 'KI-Redakteure', 'settings' => 'Einstellungen'];
+$secTitle = ['rules' => 'Regeln', 'evidence' => 'Belege', 'examples' => 'Beispiele', 'agents' => 'KI-Redakteure', 'settings' => 'Einstellungen'];
 page_head('Admin — EmpCo Greenwashing-Check', $section);
 ?>
 <h1><?= h($secTitle[$section] ?? 'Admin') ?></h1>
@@ -656,6 +761,41 @@ page_head('Admin — EmpCo Greenwashing-Check', $section);
                 <input type="hidden" name="action" value="delete_evidence">
                 <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
                 <button type="submit" class="btn-ghost btn-sm">Beleg löschen</button>
+              </form>
+            </div>
+          </details>
+        <?php endforeach; ?>
+      <?php endif; ?>
+
+    <?php elseif ($section === 'examples'): ?>
+
+      <p class="hint" style="margin-top:0">Vorher/Nachher-Beispiele als <strong>Few-Shot</strong> für die Umformulierung (Stufe C). Werden je Finding nach <strong>Kategorie/Regel</strong> passgenau eingespielt. Vorbefüllt mit rechtlich fundierten Beispielen (VKU-FAQ + BDEW-Gutachten).</p>
+
+      <details class="rule" style="margin:12px 0 16px">
+        <summary><span class="tag">＋ Neues Beispiel</span>
+          <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="rule-body"><?php example_form([], $rules); ?></div>
+      </details>
+
+      <?php if (!$examples): ?>
+        <div class="card"><p class="sub" style="margin:0">Noch keine Beispiele hinterlegt.</p></div>
+      <?php else: ?>
+        <?php foreach ($examples as $ex): ?>
+          <details class="rule">
+            <summary>
+              <span class="tag"><?= h($ex['category']) ?></span>
+              <?php if (empty($ex['active'])): ?><span class="badge skipped">inaktiv</span><?php endif; ?>
+              <span class="sum-desc"><?= h(mb_substr((string)$ex['before_text'], 0, 90)) ?></span>
+              <svg class="sum-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="rule-body">
+              <?php example_form($ex, $rules); ?>
+              <form method="post" action="/admin.php?section=examples" style="margin-top:10px" onsubmit="return confirm('Beispiel wirklich löschen?')">
+                <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+                <input type="hidden" name="action" value="delete_example">
+                <input type="hidden" name="id" value="<?= (int)$ex['id'] ?>">
+                <button type="submit" class="btn-ghost btn-sm">Beispiel löschen</button>
               </form>
             </div>
           </details>
