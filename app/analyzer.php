@@ -64,13 +64,13 @@ function prepare_analysis(int $analysisId, string $url, string $scope = 'exact')
     return ['total' => 0, 'note' => ''];
 }
 
-/** Umfang → maximale Crawl-Tiefe und Seiten-Obergrenze. */
+/** Umfang → maximale relative Pfad-Tiefe, Seiten-Obergrenze und Domain-Modus. */
 function scope_config(string $scope): array {
     return match ($scope) {
-        'depth1' => ['maxDepth' => 1,  'maxPages' => 20],
-        'depth2' => ['maxDepth' => 2,  'maxPages' => 40],
-        'full'   => ['maxDepth' => 99, 'maxPages' => 60],
-        default  => ['maxDepth' => 0,  'maxPages' => 1],
+        'depth1' => ['maxDepth' => 1,           'maxPages' => 25, 'wholeDomain' => false],
+        'depth2' => ['maxDepth' => 2,           'maxPages' => 50, 'wholeDomain' => false],
+        'full'   => ['maxDepth' => PHP_INT_MAX, 'maxPages' => 80, 'wholeDomain' => true],
+        default  => ['maxDepth' => 0,           'maxPages' => 1,  'wholeDomain' => false],
     };
 }
 
@@ -82,6 +82,36 @@ function norm_host(string $h): string {
 /** Gleiche Website (Host-Vergleich ohne www)? */
 function same_site(string $a, string $b): bool {
     return $a !== '' && $b !== '' && norm_host($a) === norm_host($b);
+}
+
+/** Zerlegt einen Pfad in nicht-leere Segmente. */
+function path_segments(string $path): array {
+    return array_values(array_filter(explode('/', $path), fn($s) => $s !== ''));
+}
+
+/** Ermittelt Pfad-Prefix und Segmentanzahl der Ausgangs-URL. */
+function seed_prefix(string $seedUrl): array {
+    $path = parse_url($seedUrl, PHP_URL_PATH) ?: '/';
+    $segs = path_segments($path);
+    return ['prefix' => $segs ? '/' . implode('/', $segs) : '', 'segs' => count($segs)];
+}
+
+/**
+ * Darf dieser Link laut Umfang gecrawlt werden?
+ * - gleiche Website (Host ohne www)
+ * - „Ganze Domain": alle Seiten
+ * - sonst: Pfad muss unter dem Ausgangs-Prefix liegen UND relative Tiefe ≤ maxDepth
+ */
+function link_allowed(string $link, array $seed, array $cfg): bool {
+    $host = (string) (parse_url($link, PHP_URL_HOST) ?: '');
+    if (!same_site($host, $seed['host'])) { return false; }
+    if (!empty($cfg['wholeDomain'])) { return true; }
+    $path = parse_url($link, PHP_URL_PATH) ?: '/';
+    if ($seed['prefix'] !== '') {
+        if ($path !== $seed['prefix'] && !str_starts_with($path, $seed['prefix'] . '/')) { return false; }
+    }
+    $rel = count(path_segments($path)) - (int) $seed['segs'];
+    return $rel >= 0 && $rel <= $cfg['maxDepth'];
 }
 
 /** Löst ../ und ./ in einer absoluten URL auf und normalisiert Host/Slash. */
@@ -148,7 +178,7 @@ function extract_links(string $html, string $baseUrl): array {
 /**
  * Liest eine ausstehende Seite: fetch → extract → Kandidaten bilden → ggf. Kinder einreihen.
  */
-function crawl_one_page(int $analysisId, array $page, array $cfg, string $seedHost): void {
+function crawl_one_page(int $analysisId, array $page, array $cfg, array $seed): void {
     $pageId = (int) $page['id'];
     $url    = (string) $page['url'];
     $depth  = (int) $page['depth'];
@@ -183,8 +213,8 @@ function crawl_one_page(int $analysisId, array $page, array $cfg, string $seedHo
         ]);
     }
 
-    // Kinder einreihen (nur gleiche Website, innerhalb Tiefe & Seiten-Obergrenze)
-    if ($depth < $cfg['maxDepth'] && $seedHost !== '') {
+    // Kinder einreihen (nach Umfang: Pfad-Prefix + relative Tiefe, Seiten-Obergrenze)
+    if ($seed['host'] !== '') {
         $pagesCount = (int) db()->query("SELECT COUNT(*) FROM pages WHERE analysis_id = " . (int)$analysisId)->fetchColumn();
         if ($pagesCount < $cfg['maxPages']) {
             $enq = db()->prepare(
@@ -194,8 +224,7 @@ function crawl_one_page(int $analysisId, array $page, array $cfg, string $seedHo
             );
             foreach (extract_links($res['html'], $url) as $link) {
                 if ($pagesCount >= $cfg['maxPages']) { break; }
-                $host = (string) (parse_url($link, PHP_URL_HOST) ?: '');
-                if (!same_site($host, $seedHost)) { continue; }
+                if (!link_allowed($link, $seed, $cfg)) { continue; }
                 $short = mb_substr($link, 0, 500);
                 $enq->execute([':a' => $analysisId, ':u' => $short, ':d' => $depth + 1, ':a2' => $analysisId, ':u2' => $short]);
                 if ($enq->rowCount() > 0) { $pagesCount++; }
@@ -233,12 +262,14 @@ function process_step(int $analysisId, int $size = 12): array {
     $a  = db()->query("SELECT scope FROM analyses WHERE id = $id")->fetch();
     $cfg = scope_config((string) ($a['scope'] ?? 'exact'));
     $seedRow  = db()->query("SELECT url FROM pages WHERE analysis_id = $id AND depth = 0 ORDER BY id LIMIT 1")->fetch();
-    $seedHost = $seedRow ? (string) (parse_url((string)$seedRow['url'], PHP_URL_HOST) ?: '') : '';
+    $seedUrl  = $seedRow ? (string) $seedRow['url'] : '';
+    $sp       = seed_prefix($seedUrl);
+    $seed     = ['host' => (string) (parse_url($seedUrl, PHP_URL_HOST) ?: ''), 'prefix' => $sp['prefix'], 'segs' => $sp['segs']];
 
     // Phase 1 — Crawl: nächste ausstehende Seite lesen
     $pending = db()->query("SELECT * FROM pages WHERE analysis_id = $id AND status = 'pending' ORDER BY depth, id LIMIT 1")->fetch();
     if ($pending) {
-        crawl_one_page($id, $pending, $cfg, $seedHost);
+        crawl_one_page($id, $pending, $cfg, $seed);
         return step_status($id, 'crawl', false);
     }
 

@@ -116,9 +116,9 @@ page_head('Analyse — EmpCo Greenwashing-Check', 'analyse');
         <label for="scope">Umfang</label>
         <select id="scope" name="scope">
           <option value="exact">Nur exakte URL</option>
-          <option value="depth1">Tiefe 1 (Seite + direkte Unterseiten)</option>
-          <option value="depth2">Tiefe 2</option>
-          <option value="full">Ganze Domain (TLD)</option>
+          <option value="depth1">Tiefe 1 (eine Ordner-Ebene unter der URL)</option>
+          <option value="depth2">Tiefe 2 (bis zwei Ordner-Ebenen unter der URL)</option>
+          <option value="full">Ganze Domain (alle Seiten der Website)</option>
         </select>
       </div>
       <div>
