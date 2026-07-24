@@ -163,16 +163,82 @@ function resolve_url(string $base, string $rel): ?string {
     return normalize_path_url($abs);
 }
 
-/** Extrahiert alle absoluten Links (<a href>) aus HTML. */
+/** Extrahiert alle absoluten Links (<a href>) aus HTML (auch unquotierte hrefs). */
 function extract_links(string $html, string $baseUrl): array {
     $links = [];
-    if (preg_match_all('#<a\b[^>]*\bhref\s*=\s*("|\')(.*?)\1#is', $html, $m)) {
-        foreach ($m[2] as $href) {
+    if (preg_match_all('#<a\b[^>]*?\bhref\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'>]+))#is', $html, $m, PREG_SET_ORDER)) {
+        foreach ($m as $set) {
+            $href = '';
+            if (isset($set[1]) && $set[1] !== '')      { $href = $set[1]; }
+            elseif (isset($set[2]) && $set[2] !== '')  { $href = $set[2]; }
+            elseif (isset($set[3]) && $set[3] !== '')  { $href = $set[3]; }
+            if ($href === '') { continue; }
             $abs = resolve_url($baseUrl, html_entity_decode($href, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
             if ($abs !== null) { $links[$abs] = true; }
         }
     }
     return array_keys($links);
+}
+
+/**
+ * Sammelt URLs aus der/den Sitemap(s) einer Website (robots.txt + /sitemap.xml, inkl. Sitemap-Index).
+ * @return string[] normalisierte, absolute URLs
+ */
+function fetch_sitemap_urls(string $origin, array $extraSitemaps = [], int $maxUrls = 3000): array {
+    $origin = rtrim($origin, '/');
+    $queue  = [];
+    foreach ($extraSitemaps as $sm) { $sm = trim((string)$sm); if ($sm !== '') { $queue[] = $sm; } }
+
+    // 1) robots.txt nach "Sitemap:"-Einträgen durchsuchen
+    $robots = fetch_url($origin . '/robots.txt', 12);
+    if ($robots['code'] < 400 && $robots['html'] !== '' && preg_match_all('/^\s*Sitemap:\s*(\S+)/im', $robots['html'], $rm)) {
+        foreach ($rm[1] as $s) { $queue[] = trim($s); }
+    }
+    // 2) Standard-Sitemap als Fallback
+    $queue[] = $origin . '/sitemap.xml';
+
+    $urls = [];
+    $seen = [];
+    $fetched = 0;
+    while ($queue && $fetched < 12 && count($urls) < $maxUrls) {
+        $sm = array_shift($queue);
+        if ($sm === '' || isset($seen[$sm])) { continue; }
+        $seen[$sm] = true;
+
+        $res = fetch_url($sm, 12);
+        $fetched++;
+        if ($res['code'] >= 400 || $res['html'] === '') { continue; }
+        $xml = $res['html'];
+
+        if (!preg_match_all('#<loc>\s*(.*?)\s*</loc>#is', $xml, $mm)) { continue; }
+        $isIndex = stripos($xml, '<sitemapindex') !== false;
+        foreach ($mm[1] as $loc) {
+            $loc = html_entity_decode(trim($loc), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($loc === '') { continue; }
+            if ($isIndex) {
+                if (!isset($seen[$loc])) { $queue[] = $loc; }
+            } else {
+                $abs = resolve_url($origin, $loc);
+                if ($abs !== null) { $urls[$abs] = true; }
+                if (count($urls) >= $maxUrls) { break; }
+            }
+        }
+    }
+    return array_keys($urls);
+}
+
+/** Im Admin gepflegte Sitemap-URLs, die zur geprüften Domain passen. */
+function configured_sitemaps_for_host(string $host): array {
+    if ($host === '') { return []; }
+    $out = [];
+    try {
+        foreach (db()->query("SELECT url FROM sitemaps ORDER BY id")->fetchAll() as $r) {
+            $u = (string) $r['url'];
+            $h = (string) (parse_url($u, PHP_URL_HOST) ?: '');
+            if (same_site($h, $host)) { $out[] = $u; }
+        }
+    } catch (Throwable $e) { /* Tabelle evtl. noch nicht vorhanden */ }
+    return $out;
 }
 
 /**
@@ -222,6 +288,20 @@ function crawl_one_page(int $analysisId, array $page, array $cfg, array $seed): 
                  SELECT :a, :u, :d, 'pending', NULL
                  WHERE NOT EXISTS (SELECT 1 FROM pages WHERE analysis_id = :a2 AND url = :u2)"
             );
+            // Beim Seed zusätzlich die Sitemap auswerten (findet auch JS-verlinkte Seiten)
+            if ($depth === 0 && $cfg['maxDepth'] > 0) {
+                $pp = parse_url($url);
+                $origin = ($pp['scheme'] ?? 'https') . '://' . ($pp['host'] ?? '') . (isset($pp['port']) ? ':' . $pp['port'] : '');
+                $extra = configured_sitemaps_for_host($seed['host']);
+                foreach (fetch_sitemap_urls($origin, $extra) as $link) {
+                    if ($pagesCount >= $cfg['maxPages']) { break; }
+                    if (!link_allowed($link, $seed, $cfg)) { continue; }
+                    $short = mb_substr($link, 0, 500);
+                    $enq->execute([':a' => $analysisId, ':u' => $short, ':d' => 1, ':a2' => $analysisId, ':u2' => $short]);
+                    if ($enq->rowCount() > 0) { $pagesCount++; }
+                }
+            }
+            // Links der Seite selbst
             foreach (extract_links($res['html'], $url) as $link) {
                 if ($pagesCount >= $cfg['maxPages']) { break; }
                 if (!link_allowed($link, $seed, $cfg)) { continue; }

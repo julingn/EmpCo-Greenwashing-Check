@@ -202,6 +202,7 @@ HTML;
     $na = $active === 'analyse' ? ' active' : '';
     $nr = $active === 'rules' ? ' active' : '';
     $ng = $active === 'agents' ? ' active' : '';
+    $nst = $active === 'settings' ? ' active' : '';
     echo <<<HTML
 <div class="app-shell">
 <aside class="sidebar">
@@ -223,6 +224,10 @@ HTML;
     <a class="nav-item{$ng}" href="/admin.php?section=agents">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       KI-Redakteure
+    </a>
+    <a class="nav-item{$nst}" href="/admin.php?section=settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M21 12h-2M19.07 19.07l-1.41-1.41M12 21v-2M4.93 19.07l1.41-1.41M3 12h2M4.93 4.93l1.41 1.41"/></svg>
+      Einstellungen
     </a>
   </nav>
   <div class="sidebar-footer">

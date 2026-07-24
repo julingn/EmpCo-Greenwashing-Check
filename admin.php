@@ -47,7 +47,7 @@ if (empty($_SESSION['admin'])) {
 }
 
 // --- Eingeloggt ---
-$section = in_array($_GET['section'] ?? '', ['rules', 'agents'], true) ? $_GET['section'] : 'rules';
+$section = in_array($_GET['section'] ?? '', ['rules', 'agents', 'settings'], true) ? $_GET['section'] : 'rules';
 $error = '';
 $info = '';
 try {
@@ -184,6 +184,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             db()->prepare("DELETE FROM agents WHERE id = :id AND agent_key <> 'reformulator'")
                 ->execute([':id' => (int)($_POST['id'] ?? 0)]);
             $info = 'Redakteur gelöscht.';
+        } catch (Throwable $e) { $error = $e->getMessage(); }
+    }
+}
+
+// Sitemap hinzufügen
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_sitemap') {
+    $section = 'settings';
+    if (!csrf_check($_POST['csrf'] ?? null)) {
+        $error = 'Ungültiges Formular (CSRF).';
+    } else {
+        $u = trim($_POST['sitemap_url'] ?? '');
+        if ($u === '' || !filter_var($u, FILTER_VALIDATE_URL)) {
+            $error = 'Bitte eine gültige Sitemap-URL angeben (inkl. https://).';
+        } else {
+            try {
+                db()->prepare("INSERT INTO sitemaps (url) VALUES (:u)")->execute([':u' => mb_substr($u, 0, 500)]);
+                $info = 'Sitemap hinzugefügt.';
+            } catch (Throwable $e) { $error = $e->getMessage(); }
+        }
+    }
+}
+
+// Sitemap löschen
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_sitemap') {
+    $section = 'settings';
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        try {
+            db()->prepare("DELETE FROM sitemaps WHERE id = :id")->execute([':id' => (int)($_POST['id'] ?? 0)]);
+            $info = 'Sitemap entfernt.';
         } catch (Throwable $e) { $error = $e->getMessage(); }
     }
 }
@@ -373,15 +402,18 @@ function agent_form(array $a = []): void {
 // ===== Daten laden =====
 $rules = [];
 $agents = [];
+$sitemaps = [];
 try {
     $rules = db()->query("SELECT * FROM rules ORDER BY rule_id")->fetchAll();
     $agents = get_agents();
+    $sitemaps = get_sitemaps();
 } catch (Throwable $e) { if (!$error) { $error = $e->getMessage(); } }
 
-page_head('Admin — EmpCo Greenwashing-Check', $section === 'agents' ? 'agents' : 'rules');
+$secTitle = ['rules' => 'Regeln', 'agents' => 'KI-Redakteure', 'settings' => 'Einstellungen'];
+page_head('Admin — EmpCo Greenwashing-Check', $section);
 ?>
-<h1><?= $section === 'agents' ? 'KI-Redakteure' : 'Regeln' ?></h1>
-<p class="sub">Verwaltung von Regelset und KI-Redakteuren.</p>
+<h1><?= h($secTitle[$section] ?? 'Admin') ?></h1>
+<p class="sub">Verwaltung von Regelset, KI-Redakteuren und Sitemaps.</p>
 
 <?php if ($error): ?><div class="alert err"><?= h($error) ?></div><?php endif; ?>
 <?php if ($info): ?><div class="alert ok"><?= h($info) ?></div><?php endif; ?>
@@ -431,7 +463,7 @@ page_head('Admin — EmpCo Greenwashing-Check', $section === 'agents' ? 'agents'
         <?php endforeach; ?>
       <?php endif; ?>
 
-    <?php else: ?>
+    <?php elseif ($section === 'agents'): ?>
 
       <p class="hint" style="margin-top:0">Jeder Redakteur hat einen eigenen Prompt. Der <strong>Umformulierungs-Redakteur</strong> steuert die konforme Neuformulierung (Stufe 3). Weitere Redakteure (z. B. Tone of Voice) können ergänzt werden.</p>
 
@@ -465,6 +497,38 @@ page_head('Admin — EmpCo Greenwashing-Check', $section === 'agents' ? 'agents'
           </div>
         </details>
       <?php endforeach; ?>
+
+    <?php else: ?>
+
+      <p class="hint" style="margin-top:0">Hinterlege konkrete <strong>Sitemaps</strong> (XML), damit der Crawl auch Seiten findet, die nur über JavaScript-Navigation verlinkt sind. Beim Analysieren werden Sitemaps genutzt, deren Domain zur geprüften URL passt – gefiltert nach der gewählten Tiefe.</p>
+
+      <div class="card">
+        <form method="post" action="/admin.php?section=settings" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+          <input type="hidden" name="action" value="add_sitemap">
+          <div style="flex:1;min-width:260px">
+            <label style="margin-top:0">Sitemap-URL</label>
+            <input type="url" name="sitemap_url" placeholder="https://www.beispiel.de/sitemap.xml" required>
+          </div>
+          <button type="submit" style="margin:0">Hinzufügen</button>
+        </form>
+      </div>
+
+      <?php if (!$sitemaps): ?>
+        <div class="card"><p class="sub" style="margin:0">Noch keine Sitemaps hinterlegt. Ohne Eintrag versucht der Crawl automatisch <code>robots.txt</code> und <code>/sitemap.xml</code>.</p></div>
+      <?php else: ?>
+        <?php foreach ($sitemaps as $sm): ?>
+          <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 20px">
+            <a href="<?= h($sm['url']) ?>" target="_blank" rel="noopener" style="word-break:break-all;color:var(--accent);text-decoration:none"><?= h($sm['url']) ?></a>
+            <form method="post" action="/admin.php?section=settings" style="margin:0" onsubmit="return confirm('Sitemap wirklich entfernen?')">
+              <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+              <input type="hidden" name="action" value="delete_sitemap">
+              <input type="hidden" name="id" value="<?= (int)$sm['id'] ?>">
+              <button type="submit" class="btn-ghost btn-sm">Entfernen</button>
+            </form>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
 
     <?php endif; ?>
 <?php

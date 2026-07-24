@@ -146,6 +146,15 @@ function db_init(): void {
         )
     ");
 
+    // Sitemaps (im Admin gepflegt, für den Crawl genutzt)
+    db()->exec("
+        CREATE TABLE IF NOT EXISTS sitemaps (
+            id         SERIAL PRIMARY KEY,
+            url        TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    ");
+
     // KI-Redakteure (mehrere Agenten, je eigener Prompt)
     db()->exec("
         CREATE TABLE IF NOT EXISTS agents (
@@ -190,6 +199,15 @@ function setting_set(string $key, string $value): void {
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
     );
     $stmt->execute([':k' => $key, ':v' => $value]);
+}
+
+/** Liste der im Admin gepflegten Sitemap-URLs. */
+function get_sitemaps(): array {
+    try {
+        return db()->query("SELECT * FROM sitemaps ORDER BY id")->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
 }
 
 /** Aktueller Redakteur-Prompt des Umformulierungs-Redakteurs (DB oder Default). */
