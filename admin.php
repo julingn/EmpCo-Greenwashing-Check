@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
 }
 
 if (empty($_SESSION['admin'])) {
-    page_head('Admin-Login — EmpCo');
+    page_head('Admin-Login — EmpCo', '', true);
     ?>
     <h1>Admin-Login</h1>
     <p class="sub">Bitte anmelden, um Regeln und KI-Redakteure zu verwalten.</p>
@@ -378,32 +378,15 @@ try {
     $agents = get_agents();
 } catch (Throwable $e) { if (!$error) { $error = $e->getMessage(); } }
 
-page_head('Admin — EmpCo Greenwashing-Check', 'admin');
+page_head('Admin — EmpCo Greenwashing-Check', $section === 'agents' ? 'agents' : 'rules');
 ?>
-<div style="display:flex;justify-content:space-between;align-items:center">
-  <h1 style="margin:0">Admin-Bereich</h1>
-  <a href="/admin.php?logout=1" style="color:var(--text2);font-size:14px">Abmelden</a>
-</div>
+<h1><?= $section === 'agents' ? 'KI-Redakteure' : 'Regeln' ?></h1>
 <p class="sub">Verwaltung von Regelset und KI-Redakteuren.</p>
 
 <?php if ($error): ?><div class="alert err"><?= h($error) ?></div><?php endif; ?>
 <?php if ($info): ?><div class="alert ok"><?= h($info) ?></div><?php endif; ?>
 
-<div class="admin-layout">
-  <nav class="admin-nav">
-    <div class="nav-label">Verwaltung</div>
-    <a href="/admin.php?section=rules" class="<?= $section === 'rules' ? 'active' : '' ?>">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="14" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
-      Regeln <span class="count"><?= count($rules) ?></span>
-    </a>
-    <a href="/admin.php?section=agents" class="<?= $section === 'agents' ? 'active' : '' ?>">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-      KI-Redakteure <span class="count"><?= count($agents) ?></span>
-    </a>
-  </nav>
-
-  <div class="admin-content">
-    <?php if ($section === 'rules'): ?>
+<?php if ($section === 'rules'): ?>
 
       <h2 style="margin-top:0">Regeln importieren</h2>
       <div class="card">
@@ -450,7 +433,6 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
 
     <?php else: ?>
 
-      <h2 style="margin-top:0">KI-Redakteure</h2>
       <p class="hint" style="margin-top:0">Jeder Redakteur hat einen eigenen Prompt. Der <strong>Umformulierungs-Redakteur</strong> steuert die konforme Neuformulierung (Stufe 3). Weitere Redakteure (z. B. Tone of Voice) können ergänzt werden.</p>
 
       <details class="rule" style="margin:12px 0 16px">
@@ -485,7 +467,5 @@ page_head('Admin — EmpCo Greenwashing-Check', 'admin');
       <?php endforeach; ?>
 
     <?php endif; ?>
-  </div>
-</div>
 <?php
 page_foot();

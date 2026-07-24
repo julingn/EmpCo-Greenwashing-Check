@@ -1,10 +1,9 @@
 <?php
 // Gemeinsames Seiten-Layout (Kopf + Fuß)
 
-function page_head(string $title, string $active = ''): void {
+function page_head(string $title, string $active = '', bool $bare = false): void {
+    $GLOBALS['__empco_bare'] = $bare;
     $t = h($title);
-    $na = $active === 'analyse' ? ' class="active"' : '';
-    $nd = $active === 'admin' ? ' class="active"' : '';
     echo <<<HTML
 <!DOCTYPE html>
 <html lang="de">
@@ -33,15 +32,38 @@ function page_head(string $title, string $active = ''): void {
   *{box-sizing:border-box}
   body{margin:0;font-family:var(--font);font-feature-settings:'tnum';
        background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased}
-  header.top{background:var(--card);border-bottom:1px solid var(--border);padding:14px 24px;
-             display:flex;align-items:center;justify-content:space-between}
-  header.top .brand{font-weight:800;font-size:18px;color:var(--accent);letter-spacing:-.01em;text-decoration:none}
-  header.top nav{display:flex;gap:8px;align-items:center}
-  header.top nav a{color:var(--text2);text-decoration:none;font-size:14px;font-weight:600;
-             padding:7px 12px;border-radius:999px}
-  header.top nav a:hover{color:var(--accent);background:var(--accent-bg)}
-  header.top nav a.active{color:var(--accent);background:var(--accent-bg)}
+  .app-shell{display:flex;min-height:100vh}
+  .sidebar{width:220px;flex-shrink:0;position:fixed;top:0;left:0;bottom:0;z-index:100;
+        background:var(--card);border-right:1px solid var(--border);
+        display:flex;flex-direction:column;overflow-y:auto}
+  .sidebar-logo{padding:0 20px;display:flex;align-items:center;gap:10px;
+        border-bottom:1px solid var(--border);height:64px;flex-shrink:0}
+  .brand-icon-sm{width:32px;height:32px;background:var(--accent);border-radius:8px;
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff}
+  .sidebar-brand{font-size:15px;font-weight:800;color:var(--accent);letter-spacing:-.01em}
+  .sidebar-nav{flex:1;padding:8px;display:flex;flex-direction:column}
+  .nav-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+        color:var(--text3);padding:12px 10px 4px}
+  .nav-item{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;
+        border:none;border-left:2px solid transparent;border-radius:var(--radius);background:none;
+        cursor:pointer;text-align:left;color:var(--text2);margin-bottom:1px;text-decoration:none;
+        transition:background .12s,color .12s;font-family:inherit;font-size:13px;font-weight:500}
+  .nav-item svg{flex-shrink:0;opacity:.55}
+  .nav-item:hover{background:#F1F5F9;color:var(--text)}
+  .nav-item:hover svg{opacity:1}
+  .nav-item.active{background:var(--accent-bg);color:var(--accent);font-weight:600;border-left:2px solid var(--accent)}
+  .nav-item.active svg{opacity:1}
+  .sidebar-footer{padding:14px 20px;border-top:1px solid var(--border);font-size:11px;
+        color:var(--text3);display:flex;align-items:center;justify-content:space-between}
+  .sidebar-footer a{color:var(--text3);font-size:11px;text-decoration:none;transition:color .12s}
+  .sidebar-footer a:hover{color:var(--red)}
+  .main-content{margin-left:220px;flex:1;min-width:0;background:var(--bg)}
   .wrap{max-width:900px;margin:0 auto;padding:32px 24px 64px}
+  .wrap-narrow{max-width:440px;padding-top:56px}
+  @media(max-width:720px){
+    .sidebar{position:static;width:100%;bottom:auto;flex-direction:column}
+    .main-content{margin-left:0}
+  }
   h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0 0 8px}
   h2{font-weight:700;letter-spacing:-.01em;font-size:20px}
   .sub{color:var(--text2);margin:0 0 28px}
@@ -143,37 +165,53 @@ function page_head(string $title, string $active = ''): void {
   details.rule[open]>summary .sum-chevron{transform:rotate(180deg)}
   .form-actions{display:flex;gap:8px;align-items:center;margin-top:16px}
   .form-actions button{margin-top:0}
-  .admin-layout{display:grid;grid-template-columns:220px 1fr;gap:28px;align-items:start}
-  @media(max-width:720px){.admin-layout{grid-template-columns:1fr}}
-  .admin-nav{position:sticky;top:24px;background:var(--card);border:1px solid var(--border);
-        border-radius:var(--radius-lg);padding:8px;box-shadow:var(--shadow-sm)}
-  .admin-nav .nav-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
-        color:var(--text3);padding:10px 10px 6px}
-  .admin-nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius);
-        color:var(--text2);text-decoration:none;font-size:13px;font-weight:500;margin-bottom:2px;
-        border-left:2px solid transparent;transition:background .12s,color .12s}
-  .admin-nav a svg{flex-shrink:0;opacity:.55}
-  .admin-nav a:hover{background:#F1F5F9;color:var(--text)}
-  .admin-nav a:hover svg{opacity:1}
-  .admin-nav a.active{background:var(--accent-bg);color:var(--accent);font-weight:600;border-left:2px solid var(--accent)}
-  .admin-nav a.active svg{opacity:1}
-  .admin-nav a .count{margin-left:auto;font-size:11px;color:var(--text3);font-weight:700}
-  .admin-nav a.active .count{color:var(--accent)}
-  .admin-content{min-width:0}
 </style>
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/">EmpCo · Greenwashing-Check</a>
-  <nav>
-    <a href="/"{$na}>Analyse</a>
-    <a href="/admin.php"{$nd}>Admin</a>
+HTML;
+    if ($bare) {
+        echo "\n<div class=\"wrap wrap-narrow\">\n";
+        return;
+    }
+    $na = $active === 'analyse' ? ' active' : '';
+    $nr = $active === 'rules' ? ' active' : '';
+    $ng = $active === 'agents' ? ' active' : '';
+    echo <<<HTML
+<div class="app-shell">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <span class="brand-icon-sm"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg></span>
+    <span class="sidebar-brand">EmpCo</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Analyse</div>
+    <a class="nav-item{$na}" href="/">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Neue Analyse
+    </a>
+    <div class="nav-section-label">Verwaltung</div>
+    <a class="nav-item{$nr}" href="/admin.php?section=rules">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="14" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+      Regeln
+    </a>
+    <a class="nav-item{$ng}" href="/admin.php?section=agents">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      KI-Redakteure
+    </a>
   </nav>
-</header>
-<div class="wrap">
+  <div class="sidebar-footer">
+    <span>EmpCo · v0.1</span>
+    <a href="/?logout=1">Abmelden</a>
+  </div>
+</aside>
+<div class="main-content"><div class="wrap">
 HTML;
 }
 
 function page_foot(): void {
-    echo "</div></body></html>";
+    if (!empty($GLOBALS['__empco_bare'])) {
+        echo "</div></body></html>";
+    } else {
+        echo "</div></div></div></body></html>";
+    }
 }

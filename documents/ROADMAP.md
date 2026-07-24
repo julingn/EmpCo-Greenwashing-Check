@@ -41,6 +41,11 @@
 - ⬜ TLD-Crawl (Tiefe 1/2/ganze Domain)
 - ⬜ Stufe 3b: Tone-of-Voice-Agenten nach der Umformulierung
 - ⬜ Lernfunktion: aus akzeptierten Änderungen neue Regeln/Trainingsbeispiele
+- ⬜ **Fehltreffer-Lernen (Trigger-Kontext)** — Trigger matchen bewusst als Substring (damit z. B. „Vergrünung" erkannt wird). Dadurch entstehen Fehltreffer wie „grün" in „**Grün**de". Diese als Trainingssignal nutzen:
+  - Wenn die KI (oder der User via „Ignorieren"/„Fehltreffer") eine Fundstelle als Fehltreffer einstuft, das Paar **(rule_id + Trigger-Begriff + normalisierter Ausschnitt/Wort)** speichern (`training_examples`).
+  - Bei späteren Analysen bekannte Fehltreffer als Kontext in den KI-Prompt einspeisen → konsistente Einstufung („‚Gründe' ist beim Trigger ‚grün' ein Fehltreffer").
+  - Optional: aus wiederkehrenden Fehltreffern eine Ausschluss-/Kontextregel je Trigger ableiten.
+  - **Wichtig:** Erfassung der Fehltreffer-Signale möglichst früh starten, damit später Trainingsdaten vorhanden sind.
 - ⬜ Historie / Archiv mehrerer Prüfläufe
 - ⬜ Suchmetriken/Filter für Content-Bausteine
 

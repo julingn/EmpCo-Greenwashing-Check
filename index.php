@@ -7,6 +7,7 @@ require __DIR__ . '/app/layout.php';
 // --- Logout ---
 if (isset($_GET['logout'])) {
     $_SESSION['user'] = false;
+    $_SESSION['admin'] = false;
     header('Location: /');
     exit;
 }
@@ -29,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['access_password'])) {
 
 // --- Login-Formular anzeigen, wenn kein Zugang ---
 if (!has_user_access()) {
-    page_head('Zugang — EmpCo Greenwashing-Check');
+    page_head('Zugang — EmpCo Greenwashing-Check', '', true);
     ?>
     <h1>Zugang</h1>
     <p class="sub">Dieser Bereich ist passwortgeschützt. Bitte gib das Zugangspasswort ein.</p>
@@ -96,10 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
 
 page_head('Analyse — EmpCo Greenwashing-Check', 'analyse');
 ?>
-<div style="display:flex;justify-content:space-between;align-items:center">
-  <h1 style="margin:0">Neue Analyse</h1>
-  <a href="/?logout=1" style="color:var(--text2);font-size:14px">Abmelden</a>
-</div>
+<h1>Neue Analyse</h1>
 <p class="sub">Prüfe Inhalte auf Greenwashing nach der EmpCo-Richtlinie (EU) 2024/825.</p>
 
 <?php if ($error): ?><div class="alert err"><?= h($error) ?></div><?php endif; ?>
