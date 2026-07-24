@@ -94,9 +94,16 @@ function db_init(): void {
             assessment    TEXT,           -- KI-Begründung
             severity      TEXT,           -- info | warn | violation
             status        TEXT DEFAULT 'open', -- open | ignored | done
+            remedy_path     TEXT,         -- belegbar | belegt_anpassen | nicht_belegbar
+            remedy_evidence TEXT,         -- Titel des passenden Belegs
+            remedy_note     TEXT,         -- KI-Begründung / empfohlener Zusatztext
             created_at    TIMESTAMP DEFAULT NOW()
         )
     ");
+    // Migration für bestehende DBs (Nachweis-Check, Stufe B)
+    db()->exec("ALTER TABLE findings ADD COLUMN IF NOT EXISTS remedy_path TEXT");
+    db()->exec("ALTER TABLE findings ADD COLUMN IF NOT EXISTS remedy_evidence TEXT");
+    db()->exec("ALTER TABLE findings ADD COLUMN IF NOT EXISTS remedy_note TEXT");
 
     // Kandidaten (Trigger-Treffer, die schrittweise per KI bewertet werden)
     db()->exec("

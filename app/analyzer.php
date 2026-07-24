@@ -522,3 +522,88 @@ function parse_json_array(string $raw): array {
     }
     throw new RuntimeException('KI-Antwort war kein gültiges JSON.');
 }
+
+/** Robustes Parsen eines JSON-Objekts aus einer KI-Antwort. */
+function parse_json_object(string $raw): array {
+    $raw = trim($raw);
+    $raw = preg_replace('/^```(?:json)?|```$/m', '', $raw);
+    $data = json_decode(trim($raw), true);
+    if (is_array($data)) { return $data; }
+    if (preg_match('/\{.*\}/s', $raw, $m)) {
+        $data = json_decode($m[0], true);
+        if (is_array($data)) { return $data; }
+    }
+    throw new RuntimeException('KI-Antwort war kein gültiges JSON.');
+}
+
+/** Belege, die zur Regel-ID (Liste) oder Kategorie eines Findings passen. */
+function matching_evidence(string $ruleId, string $category): array {
+    try {
+        $all = db()->query("SELECT * FROM evidence WHERE active ORDER BY title")->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+    $cat = mb_strtolower(trim($category));
+    $out = [];
+    foreach ($all as $ev) {
+        $rids = array_filter(array_map('trim', explode(',', (string)($ev['rule_id'] ?? ''))));
+        $evCat = mb_strtolower(trim((string)($ev['category'] ?? '')));
+        if (in_array($ruleId, $rids, true) || ($cat !== '' && $evCat === $cat)) {
+            $out[] = $ev;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Nachweis-Check (Stufe B): prüft je Finding, ob ein passender Beleg vorliegt.
+ * Ohne passenden Beleg → 'nicht_belegbar' (kein KI-Aufruf). Mit Beleg entscheidet die KI.
+ * Speichert das Ergebnis am Finding und liefert es zurück.
+ */
+function nachweis_check(int $findingId): array {
+    $stmt = db()->prepare("SELECT * FROM findings WHERE id = :id");
+    $stmt->execute([':id' => $findingId]);
+    $f = $stmt->fetch();
+    if (!$f) { return ['path' => '', 'evidence' => '', 'note' => 'Finding nicht gefunden.']; }
+
+    $matched = matching_evidence((string)$f['rule_id'], (string)$f['category']);
+
+    if (!$matched) {
+        $res = ['path' => 'nicht_belegbar', 'evidence' => '', 'note' => 'Kein passender Beleg hinterlegt → Umformulierung empfohlen.'];
+    } else {
+        $list = '';
+        foreach ($matched as $i => $ev) {
+            $list .= "#{$i} [{$ev['type']}] {$ev['title']}\n"
+                . "   Inhalt: " . mb_substr((string)$ev['content'], 0, 800) . "\n"
+                . ($ev['source_url'] ? "   Quelle: {$ev['source_url']}\n" : '')
+                . ($ev['valid_until'] ? "   Gültig bis: {$ev['valid_until']}\n" : '');
+        }
+        $system = "Du prüfst, ob eine beanstandete Werbeaussage mit vorliegenden Belegen NACHGEWIESEN werden kann "
+            . "(EmpCo-Richtlinie (EU) 2024/825, UWG/UCPD). Entscheide genau einen Weg: "
+            . "'belegbar' = ein Beleg deckt die Aussage inhaltlich ab, sie kann mit Quellenangabe bestehen bleiben; "
+            . "'belegt_anpassen' = Beleg vorhanden, aber die Formulierung bleibt irreführend → Beleg + Umformulierung nötig; "
+            . "'nicht_belegbar' = kein Beleg deckt die Aussage ab → Umformulierung nötig. "
+            . "Antworte AUSSCHLIESSLICH als JSON ohne Markdown: "
+            . "{\"path\":\"belegbar|belegt_anpassen|nicht_belegbar\",\"evidence\":\"Titel des passenden Belegs oder leer\",\"note\":\"kurze Begründung + ggf. empfohlener Quellen-/Zusatztext\"}.";
+        $user = "FUNDSTELLE: \"" . mb_substr((string)$f['snippet'], 0, 600) . "\"\n"
+            . "REGEL: {$f['rule_id']} [{$f['category']}]\n"
+            . "BISHERIGE BEWERTUNG: " . mb_substr((string)$f['assessment'], 0, 400) . "\n\n"
+            . "VORLIEGENDE BELEGE:\n{$list}";
+        try {
+            $data = parse_json_object(call_ai($system, $user));
+            $path = in_array($data['path'] ?? '', ['belegbar', 'belegt_anpassen', 'nicht_belegbar'], true) ? $data['path'] : 'nicht_belegbar';
+            $res = ['path' => $path, 'evidence' => (string)($data['evidence'] ?? ''), 'note' => (string)($data['note'] ?? '')];
+        } catch (Throwable $e) {
+            $res = ['path' => '', 'evidence' => '', 'note' => 'Nachweis-Prüfung fehlgeschlagen: ' . $e->getMessage()];
+        }
+    }
+
+    db()->prepare("UPDATE findings SET remedy_path = :p, remedy_evidence = :ev, remedy_note = :n WHERE id = :id")
+        ->execute([
+            ':p'  => $res['path'],
+            ':ev' => mb_substr($res['evidence'], 0, 500),
+            ':n'  => mb_substr($res['note'], 0, 1000),
+            ':id' => $findingId,
+        ]);
+    return $res;
+}

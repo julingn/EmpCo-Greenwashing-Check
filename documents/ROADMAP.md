@@ -27,7 +27,7 @@
 ## Schritt 4 — Nachweisen & Umformulieren (2-Wege-Prozess)
 Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen** (Nachweis vorhanden) oder **(2) umformulieren**.
 - ✅ **Stufe A — Beleg-Bibliothek** im Admin (`evidence`): CRUD wie Regeln, Typ (Zertifikat/Rechtsgrundlage/Methodik/freigegebene Aussage), Verknüpfung über Kategorie/Regel-ID, Quelle/Link, Gültig-bis.
-- ⬜ **Stufe B — Nachweis-Check je Finding:** KI prüft, ob ein passender Beleg vorliegt → Empfehlung *belegen mit X* **oder** *umformulieren* (passende Belege gezielt über Kategorie/Regel in den Prompt laden, nicht alles dumpen).
+- ✅ **Stufe B — Nachweis-Check je Finding:** on-demand pro Finding (Button „Nachweis prüfen"). Belege werden gezielt über **Regel-ID-Liste ODER Kategorie** gematcht; ohne Treffer direkt *nicht belegbar* (kein KI-Aufruf), mit Treffer entscheidet die KI zwischen *belegbar / belegt_anpassen / nicht_belegbar* (JSON). Ergebnis + Begründung wird am Finding gespeichert und in der Ergebnis-Ansicht angezeigt.
 - ⬜ **Stufe C — Umformulierung** (bestehender Redakteur) nutzt passende Belege als Kontext; Vorschläge manuell + KI, akzeptieren/verwerfen.
 - ⬜ **Stufe D — Lernfunktion:** akzeptierte Ergebnisse → `training_examples`.
 - Mensch bleibt in der Schleife: Tool schlägt vor, User akzeptiert/verwirft.

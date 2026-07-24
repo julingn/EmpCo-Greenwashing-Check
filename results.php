@@ -28,6 +28,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'findi
     exit;
 }
 
+// Nachweis-Check (Stufe B): prüft, ob ein Beleg vorliegt → belegen oder umformulieren
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check_evidence') {
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        require_once __DIR__ . '/app/analyzer.php';
+        set_time_limit(0);
+        try {
+            db_init();
+            nachweis_check((int)($_POST['fid'] ?? 0));
+        } catch (Throwable $e) { /* ignoriert */ }
+    }
+    header('Location: /results.php?id=' . $id . '#f' . (int)($_POST['fid'] ?? 0));
+    exit;
+}
+
 try {
     db_init();
     $stmt = db()->prepare("SELECT * FROM analyses WHERE id = :id");
@@ -189,7 +203,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         $pgUrl = $pageUrls[(int)$f['page_id']] ?? '';
         $pgPath = $pgUrl !== '' ? (parse_url($pgUrl, PHP_URL_PATH) ?: '/') : '';
     ?>
-      <div class="finding <?= h($sev) . $resolved ?>">
+      <div class="finding <?= h($sev) . $resolved ?>" id="f<?= (int)$f['id'] ?>">
         <div class="finding-head">
           <span class="sev-name"><?= h($sevLabel[$sev] ?? $sev) ?></span>
           <span class="finding-cat"><?= h($f['category']) ?></span>
@@ -199,7 +213,24 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         </div>
         <div class="finding-quote">„<?= h($f['snippet']) ?>"</div>
         <div class="finding-assess"><?= h($f['assessment']) ?></div>
+        <?php if (!empty($f['remedy_path'])):
+            $rp = $f['remedy_path'];
+            $rpLabel = ['belegbar' => 'Belegbar', 'belegt_anpassen' => 'Beleg vorhanden — Formulierung anpassen', 'nicht_belegbar' => 'Nicht belegbar — umformulieren'][$rp] ?? $rp;
+            $rpCls = $rp === 'belegbar' ? 'ok' : ($rp === 'nicht_belegbar' ? 'violation' : 'warn');
+        ?>
+          <div class="remedy">
+            <span class="badge <?= $rpCls ?>"><?= h($rpLabel) ?></span>
+            <?php if (!empty($f['remedy_evidence'])): ?><span class="remedy-ev">Beleg: <?= h($f['remedy_evidence']) ?></span><?php endif; ?>
+            <?php if (!empty($f['remedy_note'])): ?><div class="remedy-note"><?= h($f['remedy_note']) ?></div><?php endif; ?>
+          </div>
+        <?php endif; ?>
         <div class="finding-actions">
+          <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
+            <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+            <input type="hidden" name="action" value="check_evidence">
+            <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
+            <button type="submit" class="btn-soft"><?= empty($f['remedy_path']) ? '🔎 Nachweis prüfen' : '↻ Erneut prüfen' ?></button>
+          </form>
           <?php if ($st === 'open'): ?>
             <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
               <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">

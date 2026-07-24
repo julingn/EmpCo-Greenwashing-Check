@@ -143,7 +143,10 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   .finding-quote{margin:12px 0 8px;font-size:15px;line-height:1.55;color:var(--text);
         padding-left:14px;border-left:2px solid var(--border2)}
   .finding-assess{color:var(--text2);font-size:13.5px;line-height:1.5}
-  .finding-actions{display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+  .remedy{margin-top:12px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  .remedy-ev{font-size:12.5px;color:var(--text2);font-weight:600}
+  .remedy-note{flex-basis:100%;color:var(--text2);font-size:13px;line-height:1.5;margin-top:2px}
+  .finding-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
   .btn-soft{display:inline-flex;align-items:center;gap:6px;background:#F1F5F9;color:var(--text2);
         border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;
         cursor:pointer;margin:0;font-family:inherit;text-decoration:none;transition:.12s}
