@@ -16,7 +16,7 @@
 ## Schritt 2 — Analyse-Engine (erledigt, live)
 - ✅ Eine URL auslesen (Text + Code/HTML)
 - ✅ Prüfung gegen Regeln: Trigger-Begriffe + KI-Kontextbewertung
-- ✅ Prüf-Status anzeigen (Text / Code aktiv · JS / OCR folgen später)
+- ✅ Prüf-Status anzeigen (Text / Code immer · JS-Rendering & OCR optional je Analyse)
 - ✅ Findings speichern
 
 ## Schritt 3 — Ergebnisse (erledigt, live)
@@ -47,8 +47,8 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
 ## Später
 - ✅ **PDF auslesen als Quelle** — Upload eines PDF auf der Startseite (alternativ zur URL); Textextraktion via `pdftotext` (poppler-utils), dann Prüfung gegen die Regeln wie bei URLs (kein Crawl). Upload-Limit 25 MB.
 - ⬜ **Verlaufsvergleich / Trend pro URL** — jeden Prüflauf als Snapshot im Archiv; bei erneuter Prüfung derselben URL Findings gegen früheren Lauf matchen (Schlüssel: rule_id + normalisierter Ausschnitt) → **behoben / neu / unverändert** + Trend (Verbesserung/Verschlechterung vs. Datum). Ziel: nach Seitenüberarbeitung positive/negative Entwicklung sichtbar machen.
-- ⬜ Bilder/OCR (Umweltaussagen/Siegel in Grafiken)
-- ✅ **TLD-Crawl (Tiefe 1/2/ganze Domain)** — inkrementeller Crawler in `process_step` (Phase 1 lesen, Phase 2 KI-Bewertung). Tiefe = **relative Pfad-Tiefe unter der Ausgangs-URL** (z. B. Seed `/gas` → Tiefe 1 nur `/gas/*`, Tiefe 2 bis `/gas/*/*`), „Ganze Domain" = alle Seiten des Hosts. Seiten-Erkennung per Seiten-Links **plus Sitemap** (robots.txt + `/sitemap.xml` + Admin-gepflegte Sitemaps, inkl. Sitemap-Index). Same-Site-Filter (ohne www), Query/Fragment-Normalisierung, Seiten-Obergrenzen (T1=25, T2=50, Domain=80). Offen: Subdomains gelten als fremde Seite; JS-gerenderte Links werden nur über die Sitemap gefunden.
+- ✅ **Bilder/OCR (Umweltaussagen/Siegel in Grafiken)** — optionaler Umschalter je Analyse: Bilder/Siegel per **Tesseract** (deu+eng) auslesen (max. 8 Bilder, ab 80×80 px), Treffer als Inhaltsart „image“. Zusammen mit **JS-Rendering** (ebenfalls Umschalter): Seite wird headless gerendert, JS-Inhalte + JS-verlinkte Seiten werden erfasst.
+- ✅ **TLD-Crawl (Tiefe 1/2/ganze Domain)** — inkrementeller Crawler in `process_step` (Phase 1 lesen, Phase 2 KI-Bewertung). Tiefe = **relative Pfad-Tiefe unter der Ausgangs-URL** (z. B. Seed `/gas` → Tiefe 1 nur `/gas/*`, Tiefe 2 bis `/gas/*/*`), „Ganze Domain" = alle Seiten des Hosts. Seiten-Erkennung per Seiten-Links **plus Sitemap** (robots.txt + `/sitemap.xml` + Admin-gepflegte Sitemaps, inkl. Sitemap-Index). Same-Site-Filter (ohne www), Query/Fragment-Normalisierung, Seiten-Obergrenzen (T1=25, T2=50, Domain=80). Offen: Subdomains gelten als fremde Seite; JS-gerenderte Links werden mit aktivem **JS-Rendering** (Umschalter) gefunden, sonst nur über die Sitemap.
 - ⬜ Stufe 3b: Tone-of-Voice-Agenten nach der Umformulierung
 - ⬜ Lernfunktion: aus akzeptierten Änderungen neue Regeln/Trainingsbeispiele
 - ⬜ **Fehltreffer-Lernen (Trigger-Kontext)** — Trigger matchen bewusst als Substring (damit z. B. „Vergrünung" erkannt wird). Dadurch entstehen Fehltreffer wie „grün" in „**Grün**de". Diese als Trainingssignal nutzen:

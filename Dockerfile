@@ -15,6 +15,8 @@ RUN apk add --no-cache \
     nodejs \
     npm \
     poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-data-deu \
     && ln -sf /usr/bin/chromium-browser /usr/bin/chromium 2>/dev/null || true
 
 ENV CHROMIUM_PATH=/usr/bin/chromium

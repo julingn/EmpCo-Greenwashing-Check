@@ -66,6 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
         $url = trim($_POST['url'] ?? '');
         $scope = in_array($_POST['scope'] ?? '', ['exact', 'depth1', 'depth2', 'full'], true) ? $_POST['scope'] : 'exact';
         $language = in_array($_POST['language'] ?? '', ['auto', 'de', 'en'], true) ? $_POST['language'] : 'auto';
+        $useJs  = isset($_POST['use_js']);
+        $useOcr = isset($_POST['use_ocr']);
         $hasPdf = !empty($_FILES['pdf']['tmp_name']) && is_uploaded_file($_FILES['pdf']['tmp_name']) && (int)($_FILES['pdf']['error'] ?? 1) === 0;
 
         if ($hasPdf) {
@@ -101,14 +103,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'analy
                 require_once __DIR__ . '/app/analyzer.php';
                 set_time_limit(0);
                 $stmt = db()->prepare(
-                    "INSERT INTO analyses (source_type, source_ref, scope, language, status)
-                     VALUES (:t, :r, :s, :l, 'running') RETURNING id"
+                    "INSERT INTO analyses (source_type, source_ref, scope, language, use_js, use_ocr, status)
+                     VALUES (:t, :r, :s, :l, :js, :ocr, 'running') RETURNING id"
                 );
                 $stmt->execute([
                     ':t' => $scope === 'exact' ? 'url' : 'tld',
                     ':r' => mb_substr($url, 0, 500),
                     ':s' => $scope,
                     ':l' => $language,
+                    ':js' => $useJs,
+                    ':ocr' => $useOcr,
                 ]);
                 $id = (int) $stmt->fetchColumn();
                 prepare_analysis($id, $url, $scope);
@@ -156,6 +160,14 @@ page_head('Analyse — EmpCo Greenwashing-Check', 'analyse');
         </select>
       </div>
     </div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;font-weight:600">
+      <input type="checkbox" name="use_js" value="1" style="width:auto"> JavaScript-Rendering (findet JS-geladene Inhalte &amp; Links)
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:600">
+      <input type="checkbox" name="use_ocr" value="1" style="width:auto"> OCR (Text in Bildern/Siegeln lesen)
+    </label>
+    <div class="hint">Beide Optionen sind langsamer und rechenintensiver; sie gelten nur für URL-Analysen (nicht für PDF).</div>
 
     <div style="display:flex;align-items:center;gap:12px;margin:22px 0 4px">
       <div style="flex:1;height:1px;background:var(--border)"></div>

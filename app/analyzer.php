@@ -282,17 +282,120 @@ function configured_sitemaps_for_host(string $host): array {
     return $out;
 }
 
+/** Rendert eine URL headless (JS ausgeführt) → text/attrs/links/images oder null. */
+function render_url(string $url): ?array {
+    $cmd = 'node ' . escapeshellarg(__DIR__ . '/../render.mjs') . ' ' . escapeshellarg($url) . ' 2>/dev/null';
+    $out = @shell_exec($cmd);
+    if (!is_string($out) || trim($out) === '') { return null; }
+    $data = json_decode($out, true);
+    if (!is_array($data)) { return null; }
+    return [
+        'text'   => (string)($data['text'] ?? ''),
+        'attrs'  => is_array($data['attrs'] ?? null) ? $data['attrs'] : [],
+        'links'  => is_array($data['links'] ?? null) ? $data['links'] : [],
+        'images' => is_array($data['images'] ?? null) ? $data['images'] : [],
+    ];
+}
+
+/** Absolute Asset-URL (Bild) — anders als resolve_url ohne Datei-Endungs-Filter. */
+function resolve_asset_url(string $base, string $rel): ?string {
+    $rel = trim($rel);
+    if ($rel === '' || preg_match('~^(data:|#)~i', $rel)) { return null; }
+    if (preg_match('#^https?://#i', $rel)) { return $rel; }
+    if (str_starts_with($rel, '//')) { $bp = parse_url($base); return ($bp['scheme'] ?? 'https') . ':' . $rel; }
+    $bp = parse_url($base);
+    if (!isset($bp['scheme'], $bp['host'])) { return null; }
+    $origin = $bp['scheme'] . '://' . $bp['host'] . (isset($bp['port']) ? ':' . $bp['port'] : '');
+    if (str_starts_with($rel, '/')) { return $origin . $rel; }
+    $dir = preg_replace('#/[^/]*$#', '/', $bp['path'] ?? '/');
+    if ($dir === null || $dir === '') { $dir = '/'; }
+    return $origin . $dir . $rel;
+}
+
+/** Bild-URLs aus HTML (<img src>). */
+function extract_image_urls(string $html, string $baseUrl): array {
+    $imgs = [];
+    if (preg_match_all('#<img\b[^>]*\bsrc\s*=\s*("|\')(.*?)\1#is', $html, $m)) {
+        foreach ($m[2] as $src) {
+            $abs = resolve_asset_url($baseUrl, html_entity_decode($src, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            if ($abs !== null) { $imgs[$abs] = true; }
+        }
+    }
+    return array_keys($imgs);
+}
+
+/** Lädt eine Datei per cURL herunter. */
+function download_file(string $url, string $dest): bool {
+    $fp = @fopen($dest, 'wb');
+    if (!$fp) { return false; }
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_FILE           => $fp,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 3,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; EmpCo-OCR/1.0)',
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $ok   = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    fclose($fp);
+    return $ok !== false && $code < 400 && is_file($dest) && filesize($dest) > 0;
+}
+
+/** OCR über eine begrenzte Zahl Bilder (Tesseract, deu+eng). */
+function ocr_images(array $imageUrls, int $max = 8): string {
+    $texts = [];
+    $count = 0;
+    foreach ($imageUrls as $img) {
+        if ($count >= $max) { break; }
+        $ext = strtolower(pathinfo((string)(parse_url($img, PHP_URL_PATH) ?: ''), PATHINFO_EXTENSION));
+        if (in_array($ext, ['svg', 'gif'], true)) { continue; }
+        $tmp = tempnam(sys_get_temp_dir(), 'img');
+        if (!download_file($img, $tmp)) { @unlink($tmp); continue; }
+        $count++;
+        $t = @shell_exec('tesseract ' . escapeshellarg($tmp) . ' stdout -l deu+eng 2>/dev/null');
+        @unlink($tmp);
+        if (is_string($t)) {
+            $t = trim((string) preg_replace('/\s+/u', ' ', $t));
+            if (mb_strlen($t) >= 8) { $texts[] = $t; }
+        }
+    }
+    return trim(implode("\n", $texts));
+}
+
+/** Holt Seiteninhalt — gerendert (JS) oder als Roh-HTML. */
+function fetch_page_content(string $url, bool $useJs): array {
+    if ($useJs) {
+        $r = render_url($url);
+        if ($r !== null) {
+            $links = [];
+            foreach ($r['links'] as $l) { $a = resolve_url($url, $l); if ($a !== null) { $links[$a] = true; } }
+            return ['ok' => true, 'rendered' => true, 'text' => $r['text'], 'attrs' => $r['attrs'],
+                    'links' => array_keys($links), 'images' => $r['images']];
+        }
+    }
+    $res = fetch_url($url, 20);
+    if ($res['html'] === '' || $res['code'] >= 400) {
+        return ['ok' => false, 'rendered' => false, 'text' => '', 'attrs' => [], 'links' => [], 'images' => []];
+    }
+    $content = extract_content($res['html']);
+    return ['ok' => true, 'rendered' => false, 'text' => $content['text'], 'attrs' => $content['attrs'],
+            'links' => extract_links($res['html'], $url), 'images' => extract_image_urls($res['html'], $url)];
+}
+
 /**
- * Liest eine ausstehende Seite: fetch → extract → Kandidaten bilden → ggf. Kinder einreihen.
+ * Liest eine ausstehende Seite: (gerendert oder HTML) → Kandidaten (Text, ggf. OCR) → Kinder einreihen.
  */
-function crawl_one_page(int $analysisId, array $page, array $cfg, array $seed): void {
+function crawl_one_page(int $analysisId, array $page, array $cfg, array $seed, bool $useJs = false, bool $useOcr = false): void {
     $pageId = (int) $page['id'];
     $url    = (string) $page['url'];
     $depth  = (int) $page['depth'];
     $checks = ['text' => 'skipped', 'code' => 'skipped', 'js' => 'skipped', 'ocr' => 'skipped'];
 
-    $res = fetch_url($url, 20);
-    if ($res['html'] === '' || $res['code'] >= 400) {
+    $c = fetch_page_content($url, $useJs);
+    if (!$c['ok']) {
         $checks['text'] = 'failed';
         $checks['code'] = 'failed';
         db()->prepare("UPDATE pages SET status='failed', checks=:c WHERE id=:id")
@@ -300,24 +403,43 @@ function crawl_one_page(int $analysisId, array $page, array $cfg, array $seed): 
         return;
     }
 
-    $content = extract_content($res['html']);
-    $checks['text'] = $content['text'] !== '' ? 'ok' : 'failed';
+    $checks['text'] = $c['text'] !== '' ? 'ok' : 'failed';
     $checks['code'] = 'ok';
+    $checks['js']   = $c['rendered'] ? 'ok' : 'skipped';
+    // Seite als gelesen markieren (verhindert Doppelverarbeitung)
     db()->prepare("UPDATE pages SET status='fetched', checks=:c WHERE id=:id")
         ->execute([':c' => json_encode($checks), ':id' => $pageId]);
 
-    // Kandidaten dieser Seite
     $rules = db()->query("SELECT * FROM rules WHERE active ORDER BY rule_id")->fetchAll();
-    $cands = build_candidates($rules, $content['text'], $content['attrs']);
-    $stmt = db()->prepare(
+    $ins = db()->prepare(
         "INSERT INTO candidates (analysis_id, page_id, rule_id, category, content_type, snippet)
          VALUES (:a, :p, :rid, :cat, :ct, :snip)"
     );
-    foreach ($cands as $c) {
-        $stmt->execute([
-            ':a' => $analysisId, ':p' => $pageId, ':rid' => $c['rule_id'],
-            ':cat' => $c['category'], ':ct' => $c['content_type'], ':snip' => mb_substr($c['snippet'], 0, 1000),
+
+    // Text- + Attribut-Kandidaten
+    foreach (build_candidates($rules, $c['text'], $c['attrs']) as $cd) {
+        $ins->execute([
+            ':a' => $analysisId, ':p' => $pageId, ':rid' => $cd['rule_id'],
+            ':cat' => $cd['category'], ':ct' => $cd['content_type'], ':snip' => mb_substr($cd['snippet'], 0, 1000),
         ]);
+    }
+
+    // OCR-Kandidaten (Text in Bildern/Siegeln)
+    if ($useOcr) {
+        $ocrText = ocr_images($c['images']);
+        if ($ocrText !== '') {
+            $checks['ocr'] = 'ok';
+            foreach (build_candidates($rules, $ocrText, []) as $cd) {
+                $ins->execute([
+                    ':a' => $analysisId, ':p' => $pageId, ':rid' => $cd['rule_id'],
+                    ':cat' => $cd['category'], ':ct' => 'image', ':snip' => mb_substr($cd['snippet'], 0, 1000),
+                ]);
+            }
+        } else {
+            $checks['ocr'] = 'failed';
+        }
+        db()->prepare("UPDATE pages SET checks=:c WHERE id=:id")
+            ->execute([':c' => json_encode($checks), ':id' => $pageId]);
     }
 
     // Kinder einreihen (nach Umfang: Pfad-Prefix + relative Tiefe, Seiten-Obergrenze)
@@ -329,7 +451,7 @@ function crawl_one_page(int $analysisId, array $page, array $cfg, array $seed): 
                  SELECT :a, :u, :d, 'pending', NULL
                  WHERE NOT EXISTS (SELECT 1 FROM pages WHERE analysis_id = :a2 AND url = :u2)"
             );
-            // Beim Seed zusätzlich die Sitemap auswerten (findet auch JS-verlinkte Seiten)
+            // Beim Seed zusätzlich die Sitemap auswerten
             if ($depth === 0 && $cfg['maxDepth'] > 0) {
                 $pp = parse_url($url);
                 $origin = ($pp['scheme'] ?? 'https') . '://' . ($pp['host'] ?? '') . (isset($pp['port']) ? ':' . $pp['port'] : '');
@@ -342,8 +464,8 @@ function crawl_one_page(int $analysisId, array $page, array $cfg, array $seed): 
                     if ($enq->rowCount() > 0) { $pagesCount++; }
                 }
             }
-            // Links der Seite selbst
-            foreach (extract_links($res['html'], $url) as $link) {
+            // Links der Seite selbst (bei JS: gerenderte Links)
+            foreach ($c['links'] as $link) {
                 if ($pagesCount >= $cfg['maxPages']) { break; }
                 if (!link_allowed($link, $seed, $cfg)) { continue; }
                 $short = mb_substr($link, 0, 500);
@@ -380,8 +502,10 @@ function step_status(int $analysisId, string $phase, bool $finished): array {
  */
 function process_step(int $analysisId, int $size = 12): array {
     $id = (int) $analysisId;
-    $a  = db()->query("SELECT scope FROM analyses WHERE id = $id")->fetch();
+    $a  = db()->query("SELECT scope, use_js, use_ocr FROM analyses WHERE id = $id")->fetch();
     $cfg = scope_config((string) ($a['scope'] ?? 'exact'));
+    $useJs  = !empty($a['use_js']);
+    $useOcr = !empty($a['use_ocr']);
     $seedRow  = db()->query("SELECT url FROM pages WHERE analysis_id = $id AND depth = 0 ORDER BY id LIMIT 1")->fetch();
     $seedUrl  = $seedRow ? (string) $seedRow['url'] : '';
     $sp       = seed_prefix($seedUrl);
@@ -390,7 +514,7 @@ function process_step(int $analysisId, int $size = 12): array {
     // Phase 1 — Crawl: nächste ausstehende Seite lesen
     $pending = db()->query("SELECT * FROM pages WHERE analysis_id = $id AND status = 'pending' ORDER BY depth, id LIMIT 1")->fetch();
     if ($pending) {
-        crawl_one_page($id, $pending, $cfg, $seed);
+        crawl_one_page($id, $pending, $cfg, $seed, $useJs, $useOcr);
         return step_status($id, 'crawl', false);
     }
 

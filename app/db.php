@@ -57,12 +57,16 @@ function db_init(): void {
             id          SERIAL PRIMARY KEY,
             source_type TEXT,             -- url | tld | pdf
             source_ref  TEXT,             -- URL oder Dateiname
-            scope       TEXT,             -- exact | depth1 | depth2 | full
+            scope       TEXT,             -- exact | depth1 | depth2 | full | pdf
             status      TEXT DEFAULT 'pending',
             language    TEXT,
+            use_js      BOOLEAN DEFAULT FALSE,
+            use_ocr     BOOLEAN DEFAULT FALSE,
             created_at  TIMESTAMP DEFAULT NOW()
         )
     ");
+    db()->exec("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS use_js BOOLEAN DEFAULT FALSE");
+    db()->exec("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS use_ocr BOOLEAN DEFAULT FALSE");
 
     // Geprüfte Seiten je Prüflauf (inkl. Prüf-Status Text/Code/JS/OCR)
     db()->exec("

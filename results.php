@@ -245,7 +245,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         <span><span class="badge ok">✓</span> durchgeführt</span>
         <span><span class="badge skipped">–</span> nicht durchgeführt</span>
         <span><span class="badge violation">✕</span> fehlgeschlagen</span>
-        <span style="color:var(--text3)">Text &amp; Code aktiv · JS &amp; OCR folgen später.</span>
+        <span style="color:var(--text3)">Text &amp; Code immer aktiv · JS &amp; OCR je nach gewählter Analyse-Option.</span>
       </div>
     </div>
 
