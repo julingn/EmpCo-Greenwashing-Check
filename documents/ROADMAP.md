@@ -56,7 +56,7 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
   - Bei späteren Analysen bekannte Fehltreffer als Kontext in den KI-Prompt einspeisen → konsistente Einstufung („‚Gründe' ist beim Trigger ‚grün' ein Fehltreffer").
   - Optional: aus wiederkehrenden Fehltreffern eine Ausschluss-/Kontextregel je Trigger ableiten.
   - **Wichtig:** Erfassung der Fehltreffer-Signale möglichst früh starten, damit später Trainingsdaten vorhanden sind.
-- ⬜ Historie / Archiv mehrerer Prüfläufe
+- ✅ **Historie / Archiv mehrerer Prüfläufe** — Seite `archive.php` (Sidebar „Prüf-Archiv") listet alle Läufe (Quelle, Umfang, Seiten, JS/OCR, Status, Datum, Findings-Ampel); Ergebnis erneut öffnen oder Lauf löschen (kaskadiert).
 - ⬜ Suchmetriken/Filter für Content-Bausteine
 
 ## Notiz

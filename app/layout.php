@@ -225,6 +225,7 @@ HTML;
         return;
     }
     $na = $active === 'analyse' ? ' active' : '';
+    $narch = $active === 'archive' ? ' active' : '';
     $nr = $active === 'rules' ? ' active' : '';
     $nb = $active === 'evidence' ? ' active' : '';
     $nbe = $active === 'examples' ? ' active' : '';
@@ -242,6 +243,10 @@ HTML;
     <a class="nav-item{$na}" href="/">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       Neue Analyse
+    </a>
+    <a class="nav-item{$narch}" href="/archive.php">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+      Prüf-Archiv
     </a>
     <div class="nav-section-label">Verwaltung</div>
     <a class="nav-item{$nr}" href="/admin.php?section=rules">
