@@ -1,5 +1,5 @@
 # EmpCo – Greenwashing Prüfung — Anforderungen (Spezifikation)
-> Arbeitsdokument. Noch kein Bau. Wird mit dem User verfeinert, bevor das Scaffolding startet.
+> **Umsetzungsstand:** Alle Stufen (Analyse → Ergebnisse → Belegen/Umformulieren → Lernen → Archiv) sind **live**. Aktueller Feature-/Offen-Stand: siehe `ROADMAP.md` und `MUST_READ.md`. Dieses Dokument beschreibt die ursprüngliche Spezifikation.
 > Rechtsrahmen: EmpCo-Richtlinie (EU) 2024/825 (ändert UCPD + CRD) — Schutz vor irreführenden Umweltaussagen, Transparenz zu Haltbarkeit/Reparierbarkeit/Nachhaltigkeit.
 
 ## Gesamtbild

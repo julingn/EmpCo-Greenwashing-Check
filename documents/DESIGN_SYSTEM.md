@@ -4,6 +4,8 @@ Gleiche Marke wie LAT und OKR-Builder. Beim Bau die bewährten Tokens/Komponente
 
 > Bei jeder Design-Änderung dieses Dokument aktualisieren. Nur Design-Tokens (CSS-Variablen) verwenden — keine hartkodierten Farben.
 
+> **Umgesetzte UI (live, `app/layout.php`):** globale **App-Shell mit fixer Sidebar** (LAT-Stil; Sektionen Analyse / Verwaltung / System, aktiver Akzentbalken), Login-Seiten als schmale Bare-Ansicht. Komponenten u. a.: Cards, Buttons (Pill), Alerts, Badges/`sev-chip`, **Donut-Übersicht** (SVG, mehrsegmentig), aufklappbare `details.rule`-Editoren, **Checklist** (Mehrfachauswahl), **Remedy**- und **Reform**-Karten (Ergebnis), **Preview**-Popover (Hover-Screenshot).
+
 ---
 
 ## 1 · Marke (MVV Corporate Design Manual)

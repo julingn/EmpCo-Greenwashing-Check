@@ -2,33 +2,50 @@
 > Zentrale Projektfakten. Nach jedem relevanten Schritt/Deploy aktualisieren.
 
 ## Status
-- **Noch nicht gebaut.** Ordner + Doku angelegt; Bau wartet auf Freigabe des Users.
+- **Live auf Railway** (Auto-Deploy von GitHub `main`, Repo `julingn/EmpCo-Greenwashing-Check`). Der aktive Builder ist das **Dockerfile**.
+- Kernfunktion vollständig umgesetzt: **Analyse → Ergebnisse → 2-Wege-Prozess (Belegen / Umformulieren) → Lernfunktion**.
 - Ordner: `C:\Users\U18716\EmpCo - Greenwashing Prüfung` (Multi-Root-Workspace neben LAT + okr-builder).
 
 ## Zweck
-- Content-Finder / Greenwashing-Prüfung nach **EmpCo-Richtlinie (EU) 2024/825** (Empowering Consumers for the Green Transition).
-- Rechtsrahmen: ändert die Richtlinie über unlautere Geschäftspraktiken (UCPD) + Verbraucherrechte-Richtlinie (CRD).
-- Kernanliegen: Schutz vor irreführenden Umweltaussagen („Greenwashing"), Transparenz zu Haltbarkeit, Reparierbarkeit und Nachhaltigkeit.
+- Content-Finder / Greenwashing-Prüfung nach **EmpCo-Richtlinie (EU) 2024/825** (UWG-Novelle, neue Umweltwerbe-Vorgaben ab 27.09.2026).
+- Prüft Werbeaussagen auf irreführende Umweltaussagen; schlägt **Belege** oder **konforme Umformulierungen** vor.
 
-## Funktionsumfang (MVP)
-1. **Analyse:** Content-Bausteine finden und gegen ein Regelset (EmpCo/UCPD/CRD) bewerten/kennzeichnen.
-2. **Reformulierung:** neue, konforme Formulierungen nach Regelset erzeugen.
-- **Lernfunktion: NICHT im MVP** — kommt später (aus manuellen Korrekturen neue Regeln ableiten).
+## Was das Tool kann (live)
+### Analyse
+- Quelle: **URL** (exakt / Tiefe 1 / Tiefe 2 / ganze Domain) **oder PDF-Upload** (Text via `pdftotext`).
+- Crawl: inkrementell; Tiefe = **relative Pfad-Tiefe** unter der Ausgangs-URL; Seiten-Erkennung per Links **+ Sitemap** (robots.txt/`sitemap.xml` + Admin-gepflegte Sitemaps).
+- Optionale Umschalter je Analyse: **JS-Rendering** (Headless-Chromium) und **OCR** (Tesseract, Text in Bildern/Siegeln).
+- Prüfung: Trigger-Begriffe (Substring) → Kandidaten → **KI-Kontextbewertung** (OpenAI). Fortschritt zweiphasig (Lesen → Prüfen).
+### Ergebnisse
+- Findings mit Ampel (Verstoß/Prüfen/Hinweis) + **Donut-Übersicht**; Ignorieren/Erledigt; **CSV-Export** (inkl. Seite/Fundort).
+- **Preview:** Hover-Screenshot der Fundstelle (headless gerendert, Stelle via `window.find` markiert).
+- **Prüf-Archiv** (`archive.php`): alle Läufe auflisten, öffnen, löschen.
+### 2-Wege-Prozess (Schritt 4)
+- **Belegen (A/B):** Beleg-Bibliothek im Admin + **Nachweis-Check** je Finding (belegbar / belegt_anpassen / nicht_belegbar).
+- **Umformulieren (C):** Button je Finding; Exakt-Match-Kurzschluss auf geprüfte Beispiele, sonst KI mit **Few-Shot-Beispielen + Belegen**; Vorschlag editierbar, Übernehmen/Verwerfen.
+- **Lernen (D):** akzeptierte Umformulierung → gelerntes `training_example` (Herkunft `learned`); **Un-Learn** per Löschen im Admin.
 
-## Entscheidungen (Stand: offen/festgelegt)
-- Regelset-Start: **User liefert eigenes Regelset** (nicht Copilot-generiert, nicht leer).
-- Lernfunktion: erst später.
-- Eingabeart (Text einfügen vs. URL crawlen): **NOCH OFFEN** — vor Bau klären.
+## Admin (Sidebar, passwortgeschützt)
+- **Verwaltung:** Regeln (Import xlsx/CSV + Editor) · Belege · Beispiele (kuratiert + gelernt)
+- **System:** KI-Redakteure (Prompt je Agent) · Einstellungen (Sitemaps)
 
-## Technik-Plan (analog okr-builder)
-- Eigenständiges Projekt: eigenes GitHub-Repo (julingn) + eigener Railway-Service.
-- Stack: PHP 8.3 + PostgreSQL + KI (OpenAI/Anthropic). Deploy-Dateien: Dockerfile / nixpacks.toml / Procfile / router.php.
-- **Railway-Stolpersteine (aus okr-builder gelernt):**
-  - Start command darf NICHT mit `VAR=wert` beginnen → sonst „executable not found".
-  - `$PORT` nur in Shell auflösbar → Start command `sh -c "php -S 0.0.0.0:$PORT -t . router.php"` oder Feld leeren (Dockerfile-CMD greift).
-- ENV: `DATABASE_URL` (`${{Postgres.DATABASE_URL}}`), `ADMIN_PASSWORD`, ggf. `APP_PASSWORD`, `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`.
+## Technik
+- Stack: **PHP 8.3 + PostgreSQL + OpenAI**. Headless **Chromium/Puppeteer** (Preview + JS-Rendering), **poppler-utils** (PDF), **tesseract** deu+eng (OCR).
+- Deploy über **Dockerfile** (installiert chromium, nodejs/npm, poppler-utils, tesseract). Start: `php -d upload_max_filesize=25M … -S 0.0.0.0:$PORT -t . router.php`.
+- Wichtige Dateien: `index.php` (Eingabe) · `results.php` (Ergebnisse) · `archive.php` · `admin.php` · `preview.php` + `preview_shot.mjs` · `render.mjs` · `export.php` · `analyze_step.php`; `app/`: `config.php`, `db.php`, `analyzer.php`, `ai.php`, `layout.php`.
+- **ENV (Railway):** `DATABASE_URL`, `ADMIN_PASSWORD`, ggf. `APP_PASSWORD`, `OPENAI_API_KEY` (`OPENAI_MODEL` default `gpt-4o`), optional `ANTHROPIC_API_KEY`.
 
-## Nächster Schritt bei Freigabe
-1. Eingabeart festlegen (Text/URL/beides).
-2. User-Regelset einsammeln → als Startdaten in DB.
-3. Scaffold wie okr-builder, dann GitHub + Railway.
+## DB-Schema (in `db_init()` angelegt/migriert)
+`rules` · `analyses` (+`use_js`/`use_ocr`) · `pages` (+`status`/`depth`) · `candidates` · `findings` (+`remedy_path`/`remedy_evidence`/`remedy_note`) · `reformulations` · `training_examples` (+`source`/`finding_id`) · `evidence` · `sitemaps` · `agents` · `settings`
+
+## Wichtige gelernte Fallstricke
+- **PDO + PostgreSQL Boolean:** PHP-`false` wird zu `''` → Boolean-Bind **immer als `(int)` (0/1)** übergeben (sonst `22P02`).
+- Railway: Start-Command nicht mit `VAR=wert` beginnen; `$PORT` nur in der Shell auflösbar.
+- Trigger matchen als **Substring** (damit z. B. „Vergrünung“ gefunden wird) → Fehltreffer („grün“ in „Gründe“) bewusst; KI filtert, Fehltreffer-Lernen ist geplant.
+
+## Offen / bekannt (Details in `ROADMAP.md`)
+- Preview trifft nicht immer exakt die Stelle (via `window.find` verbessert – weiter beobachten).
+- Verlaufsvergleich/Trend pro URL · Fehltreffer-Lernen · Tone-of-Voice-Agenten · Suchmetriken/Filter · Subdomains im Crawl · OCR-Feintuning.
+
+## Doku
+Anforderungen in `ANFORDERUNGEN.md`, Roadmap in `ROADMAP.md`, Design in `DESIGN_SYSTEM.md`.
