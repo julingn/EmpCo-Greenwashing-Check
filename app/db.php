@@ -135,6 +135,8 @@ function db_init(): void {
             created_at  TIMESTAMP DEFAULT NOW()
         )
     ");
+    // Migration: welche KI-Redakteure am Vorschlag beteiligt waren (Transparenz)
+    db()->exec("ALTER TABLE reformulations ADD COLUMN IF NOT EXISTS agents_used TEXT");
 
     // Trainingsbeispiele / Vorher-Nachher (Few-Shot für Umformulierung, Stufe C+D)
     db()->exec("
@@ -217,6 +219,18 @@ function db_init(): void {
             ':p' => $prompt,
         ]);
     }
+
+    // Tonalitäts-Redakteur (Brand Voice, Stufe 3b) idempotent anlegen —
+    // läuft automatisch nach dem Umformulierungs-Redakteur.
+    db()->prepare(
+        "INSERT INTO agents (agent_key, name, description, prompt)
+         VALUES ('tone_of_voice', :n, :d, :p)
+         ON CONFLICT (agent_key) DO NOTHING"
+    )->execute([
+        ':n' => 'Tonalitäts-Redakteur (Brand Voice)',
+        ':d' => 'Schleift den konformen Text auf die Brand Voice, ohne die Konformität zu ändern (Stufe 3b).',
+        ':p' => DEFAULT_TONE_PROMPT,
+    ]);
 
     // Vorher/Nachher-Beispiele einmalig befüllen (rechtlich fundiert: VKU-FAQ + BDEW-Gutachten)
     $hasExamples = (int) db()->query("SELECT COUNT(*) FROM training_examples")->fetchColumn();
@@ -343,6 +357,23 @@ function editor_prompt(): string {
         if ($p !== false && (string)$p !== '') { return (string)$p; }
     } catch (Throwable $e) { /* Fallback unten */ }
     return DEFAULT_EDITOR_PROMPT;
+}
+
+/**
+ * Tonalitäts-Prompt (Brand Voice, Stufe 3b) aus der DB oder Default.
+ * Gibt '' zurück, wenn der Agent deaktiviert ist — dann läuft kein ToV-Schliff.
+ */
+function tone_prompt(): string {
+    try {
+        $stmt = db()->prepare("SELECT prompt, active FROM agents WHERE agent_key = 'tone_of_voice' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row !== false) {
+            if (empty($row['active'])) { return ''; }
+            if ((string)$row['prompt'] !== '') { return (string)$row['prompt']; }
+        }
+    } catch (Throwable $e) { /* Fallback unten */ }
+    return DEFAULT_TONE_PROMPT;
 }
 
 /** Liefert alle KI-Redakteure. */

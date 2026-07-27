@@ -30,10 +30,11 @@ if (is_file($out) && filesize($out) > 0) {
 try {
     db_init();
     $st = db()->prepare(
-        "SELECT f.snippet, COALESCE(p.url, a.source_ref) AS url
+        "SELECT f.snippet, ru.trigger_terms, COALESCE(p.url, a.source_ref) AS url
          FROM findings f
          LEFT JOIN pages p ON p.id = f.page_id
          JOIN analyses a ON a.id = f.analysis_id
+         LEFT JOIN rules ru ON ru.rule_id = f.rule_id
          WHERE f.id = :id"
     );
     $st->execute([':id' => $fid]);
@@ -46,13 +47,26 @@ try {
 
     if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
 
+    $snippet = (string)$row['snippet'];
+
+    // Passenden Trigger-Begriff bestimmen (der längste im Snippet vorkommende) —
+    // er markiert die exakte Fundstelle innerhalb des Kontext-Ausschnitts.
+    $term = '';
+    $terms = array_filter(array_map('trim', explode(',', (string)($row['trigger_terms'] ?? ''))));
+    foreach ($terms as $t) {
+        if ($t !== '' && mb_stripos($snippet, $t) !== false && mb_strlen($t) > mb_strlen($term)) {
+            $term = $t;
+        }
+    }
+
     $snipFile = tempnam(sys_get_temp_dir(), 'snip');
-    file_put_contents($snipFile, (string)$row['snippet']);
+    file_put_contents($snipFile, $snippet);
 
     $cmd = 'node ' . escapeshellarg(__DIR__ . '/preview_shot.mjs')
         . ' ' . escapeshellarg((string)$row['url'])
         . ' ' . escapeshellarg($snipFile)
-        . ' ' . escapeshellarg($out) . ' 2>&1';
+        . ' ' . escapeshellarg($out)
+        . ' ' . escapeshellarg($term) . ' 2>&1';
 
     $output = [];
     $code = 1;

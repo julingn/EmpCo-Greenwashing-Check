@@ -15,6 +15,7 @@ $analysis = null;
 $pages = [];
 $findings = [];
 $reforms = [];
+$tovActive = false;
 
 // Status eines Findings ändern (Ignorieren/Erledigt/Zurücksetzen)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finding_status') {
@@ -51,6 +52,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'refor
         try {
             db_init();
             generate_reformulation((int)($_POST['fid'] ?? 0));
+        } catch (Throwable $e) { /* ignoriert */ }
+    }
+    header('Location: /results.php?id=' . $id . '#f' . (int)($_POST['fid'] ?? 0));
+    exit;
+}
+
+// Tonalitäts-Schliff (Stufe 3b, manuell): wendet den Brand-Voice-Redakteur auf die
+// vorhandene Umformulierung an (Basis = ggf. editierter Textarea-Inhalt).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'tone_of_voice') {
+    if (csrf_check($_POST['csrf'] ?? null)) {
+        require_once __DIR__ . '/app/analyzer.php';
+        set_time_limit(0);
+        try {
+            db_init();
+            tone_reformulation((int)($_POST['fid'] ?? 0), trim($_POST['reform_text'] ?? ''));
         } catch (Throwable $e) { /* ignoriert */ }
     }
     header('Location: /results.php?id=' . $id . '#f' . (int)($_POST['fid'] ?? 0));
@@ -109,6 +125,8 @@ try {
             $rfid = (int)$rr['finding_id'];
             if (!isset($reforms[$rfid])) { $reforms[$rfid] = $rr; }
         }
+        // Ist der Tonalitäts-Redakteur (Brand Voice) aktiv? Steuert den ToV-Button.
+        $tovActive = trim(tone_prompt()) !== '';
     }
 } catch (Throwable $e) {
     $error = $e->getMessage();
@@ -294,7 +312,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
         <?php endif; ?>
         <?php if ($rf): $accepted = !empty($rf['accepted']); $kindLbl = $rf['kind'] === 'example' ? 'Vorschlag (geprüftes Beispiel)' : ($rf['kind'] === 'manual' ? 'Manuell' : 'KI-Vorschlag'); ?>
           <div class="reform<?= $accepted ? ' accepted' : '' ?>">
-            <div class="reform-tag"><?= $accepted ? '✓ Übernommene Umformulierung' : ('✎ ' . h($kindLbl)) ?></div>
+            <div class="reform-tag"><?= $accepted ? '✓ Übernommene Umformulierung' : ('✎ ' . h($kindLbl)) ?><?php if (!empty($rf['agents_used'])): ?> <span class="reform-agents">· <?= h($rf['agents_used']) ?></span><?php endif; ?></div>
             <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
               <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
               <input type="hidden" name="rid" value="<?= (int)$rf['id'] ?>">
@@ -302,6 +320,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
               <textarea name="reform_text" class="reform-text"><?= h($rf['text']) ?></textarea>
               <div class="reform-actions">
                 <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok"><?= $accepted ? '✓ Änderung speichern' : '✓ Übernehmen' ?></button>
+                <?php if ($tovActive): ?><button type="submit" name="action" value="tone_of_voice" class="btn-soft" formnovalidate title="Wendet die Brand Voice auf den obigen Text an">🎨 Tonalität anpassen</button><?php endif; ?>
                 <button type="submit" name="action" value="reformulation_reject" class="btn-soft" formnovalidate>✕ Verwerfen</button>
               </div>
             </form>

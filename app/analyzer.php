@@ -799,11 +799,69 @@ function matching_examples(string $ruleId, string $category): array {
 }
 
 /** Speichert einen Umformulierungs-Vorschlag (ersetzt vorherige, noch nicht übernommene). */
-function save_reformulation(int $findingId, string $kind, string $text): int {
+function save_reformulation(int $findingId, string $kind, string $text, string $agentsUsed = ''): int {
     db()->prepare("DELETE FROM reformulations WHERE finding_id = :f AND accepted = FALSE")->execute([':f' => $findingId]);
-    $stmt = db()->prepare("INSERT INTO reformulations (finding_id, kind, text, accepted) VALUES (:f, :k, :t, FALSE) RETURNING id");
-    $stmt->execute([':f' => $findingId, ':k' => $kind, ':t' => mb_substr($text, 0, 4000)]);
+    $stmt = db()->prepare("INSERT INTO reformulations (finding_id, kind, text, accepted, agents_used) VALUES (:f, :k, :t, FALSE, :ag) RETURNING id");
+    $stmt->execute([':f' => $findingId, ':k' => $kind, ':t' => mb_substr($text, 0, 4000), ':ag' => $agentsUsed !== '' ? $agentsUsed : null]);
     return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Stufe 3b: schleift einen bereits EmpCo-konformen Text auf die Brand Voice.
+ * Läuft nach dem Umformulierungs-Redakteur, ändert nur die Tonalität (keine neuen
+ * Umweltaussagen). Bei deaktiviertem ToV-Agent oder Fehler bleibt der Text unverändert.
+ * Rückgabe: [Text, bool ob ToV angewandt wurde].
+ */
+function apply_tone_of_voice(string $text, array $f): array {
+    $sys = tone_prompt();
+    if (trim($sys) === '' || trim($text) === '') { return [$text, false]; }
+    $user = "EMPCO-KONFORMER TEXT (nur tonal anpassen, Konformität nicht verändern):\n\"{$text}\"\n\n"
+        . "AUFGABE: Passe ausschließlich die Tonalität an die Brand Voice an. Behalte Sprache, Kernbotschaft "
+        . "und alle belegten Konkretisierungen bei. Führe keine neuen Umwelt-/Nachhaltigkeitsaussagen ein. "
+        . "Antworte NUR mit dem angepassten Text (ohne Anführungszeichen, ohne Erläuterung).";
+    try {
+        $toned = trim(call_ai($sys, $user));
+        $toned = trim($toned, "\"'„“ \n\r\t");
+        if ($toned === '') { return [$text, false]; }
+        return [$toned, true];
+    } catch (Throwable $e) {
+        return [$text, false];
+    }
+}
+
+/**
+ * Stufe 3b (manuell): wendet den Tonalitäts-Redakteur auf die aktuelle
+ * Umformulierung eines Findings an. Basis ist der übergebene (ggf. editierte)
+ * Text oder – falls leer – der gespeicherte Vorschlag. Aktualisiert den Datensatz
+ * und ergänzt agents_used. Rückgabe: ['text'=>…, 'id'=>…, 'agents'=>…] oder ['error'=>…].
+ */
+function tone_reformulation(int $findingId, string $baseText = ''): array {
+    if (trim(tone_prompt()) === '') {
+        return ['error' => 'Tonalitäts-Redakteur ist deaktiviert.'];
+    }
+    $stmt = db()->prepare("SELECT * FROM findings WHERE id = :id");
+    $stmt->execute([':id' => $findingId]);
+    $f = $stmt->fetch();
+    if (!$f) { return ['error' => 'Finding nicht gefunden.']; }
+
+    $rStmt = db()->prepare("SELECT * FROM reformulations WHERE finding_id = :f ORDER BY accepted DESC, id DESC LIMIT 1");
+    $rStmt->execute([':f' => $findingId]);
+    $rf = $rStmt->fetch();
+    if (!$rf) { return ['error' => 'Keine Umformulierung vorhanden.']; }
+
+    $src = trim($baseText) !== '' ? trim($baseText) : (string)$rf['text'];
+    if (trim($src) === '') { return ['error' => 'Kein Text zum Anpassen.']; }
+
+    [$toned, $applied] = apply_tone_of_voice($src, $f);
+    if (!$applied) { return ['error' => 'Tonalitätsanpassung fehlgeschlagen.']; }
+
+    $agents = (string)($rf['agents_used'] ?? '');
+    if (mb_stripos($agents, 'Tonalität') === false) {
+        $agents = $agents === '' ? 'Tonalität (Brand Voice)' : $agents . ' + Tonalität (Brand Voice)';
+    }
+    db()->prepare("UPDATE reformulations SET text = :t, agents_used = :ag WHERE id = :id")
+        ->execute([':t' => mb_substr($toned, 0, 4000), ':ag' => $agents, ':id' => (int)$rf['id']]);
+    return ['text' => $toned, 'id' => (int)$rf['id'], 'agents' => $agents];
 }
 
 /**
@@ -827,8 +885,10 @@ function generate_reformulation(int $findingId): array {
         $after  = trim((string)($ex['after_text'] ?? ''));
         if ($before !== '' && $after !== '' && mb_strlen($before) >= 15
             && ($before === $normSnip || mb_strpos($normSnip, $before) !== false)) {
-            $refId = save_reformulation($findingId, 'example', $after);
-            return ['kind' => 'example', 'text' => $after, 'id' => $refId];
+            // Rechtsgeprüftes Beispiel bleibt 1:1 erhalten (kein ToV-Schliff, um die
+            // geprüfte Formulierung nicht zu verändern).
+            $refId = save_reformulation($findingId, 'example', $after, 'Rechtsgeprüftes Beispiel');
+            return ['kind' => 'example', 'text' => $after, 'id' => $refId, 'agents' => 'Rechtsgeprüftes Beispiel'];
         }
     }
 
@@ -864,8 +924,11 @@ function generate_reformulation(int $findingId): array {
         $text = trim(call_ai($system, $user));
         $text = trim($text, "\"'„“ \n\r\t");
         if ($text === '') { throw new RuntimeException('Leere Antwort.'); }
-        $refId = save_reformulation($findingId, 'ai', $text);
-        return ['kind' => 'ai', 'text' => $text, 'id' => $refId];
+
+        // Nur EmpCo-Umformulierung. Der Tonalitäts-Schliff (Stufe 3b) wird
+        // separat und manuell über tone_reformulation() ausgelöst.
+        $refId = save_reformulation($findingId, 'ai', $text, 'EmpCo-Redakteur');
+        return ['kind' => 'ai', 'text' => $text, 'id' => $refId, 'agents' => 'EmpCo-Redakteur'];
     } catch (Throwable $e) {
         return ['kind' => '', 'text' => '', 'error' => 'Umformulierung fehlgeschlagen: ' . $e->getMessage()];
     }
