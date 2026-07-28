@@ -79,17 +79,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'refor
         $rid = (int)($_POST['rid'] ?? 0);
         $txt = trim($_POST['reform_text'] ?? '');
         $accAgents = trim($_POST['acc_agents'] ?? '');
+        $variant = ($_POST['variant'] ?? 'base') === 'tov' ? 'tov' : 'base';
         try {
-            $row = db()->prepare("SELECT finding_id FROM reformulations WHERE id = :id");
+            $row = db()->prepare("SELECT finding_id, text FROM reformulations WHERE id = :id");
             $row->execute([':id' => $rid]);
-            $fidOf = (int)($row->fetchColumn() ?: 0);
+            $rrow = $row->fetch();
+            $fidOf = (int)($rrow['finding_id'] ?? 0);
+            $baseText = (string)($rrow['text'] ?? ''); // EmpCo-konforme Basis (vor dem Update)
             db()->prepare("UPDATE reformulations SET text = :t, accepted = TRUE, tov_text = NULL, agents_used = COALESCE(NULLIF(:ag, ''), agents_used) WHERE id = :id")
                 ->execute([':t' => mb_substr($txt, 0, 4000), ':ag' => $accAgents, ':id' => $rid]);
             if ($fidOf > 0) {
                 db()->prepare("DELETE FROM reformulations WHERE finding_id = :f AND id <> :id")
                     ->execute([':f' => $fidOf, ':id' => $rid]);
                 require_once __DIR__ . '/app/analyzer.php';
-                learn_from_reformulation($fidOf, $txt);
+                // Lernen (D): IMMER die EmpCo-konforme Basis als Trainingsbeispiel — nicht die
+                // tonal gefärbte Brand-Voice-Fassung. Bei Basis-Übernahme ist das der (ggf.
+                // editierte) übernommene Text, bei ToV-Übernahme die gespeicherte Basis.
+                $learnText = $variant === 'tov' ? $baseText : $txt;
+                learn_from_reformulation($fidOf, $learnText);
             }
         } catch (Throwable $e) { /* ignoriert */ }
     }
@@ -407,9 +414,10 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
               <input type="hidden" name="rid" value="<?= (int)$rf['id'] ?>">
               <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
               <input type="hidden" name="acc_agents" value="<?= h($baseAgents) ?>">
+              <input type="hidden" name="variant" value="base">
               <textarea name="reform_text" class="reform-text"><?= h($rf['text']) ?></textarea>
               <div class="reform-actions">
-                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok">✓ Übernehmen</button>
+                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok" title="Übernimmt den Text und speichert ihn als Beispiel fürs KI-Training (EmpCo-konforme Basis).">✓ Übernehmen &amp; lernen</button>
                 <?php if ($tovActive): ?><button type="submit" name="action" value="tone_of_voice" class="btn-soft" formnovalidate title="Erzeugt aus diesem Text eine MVV-Brand-Voice-Fassung"><?= $hasTov ? '🎨 Tonalität neu erzeugen' : '🎨 Tonalität anpassen' ?></button><?php endif; ?>
                 <button type="submit" name="action" value="reformulation_reject" class="btn-soft" formnovalidate>✕ Verwerfen</button>
               </div>
@@ -423,9 +431,10 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
               <input type="hidden" name="rid" value="<?= (int)$rf['id'] ?>">
               <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
               <input type="hidden" name="acc_agents" value="<?= h($tovAgents) ?>">
+              <input type="hidden" name="variant" value="tov">
               <textarea name="reform_text" class="reform-text"><?= h($rf['tov_text']) ?></textarea>
               <div class="reform-actions">
-                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok">✓ Diese Version übernehmen</button>
+                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok" title="Übernimmt die Brand-Voice-Fassung; als Trainingsbeispiel wird die EmpCo-konforme Basis gelernt.">✓ Diese Version übernehmen</button>
               </div>
             </form>
           </div>
