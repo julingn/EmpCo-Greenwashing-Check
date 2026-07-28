@@ -41,8 +41,8 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
   - ✅ **Beispiele** — Vorher/Nachher-Bibliothek (Few-Shot, Basis für Stufe C/D)
   - ✅ **KI-Redakteure** als eigener Menüpunkt — mehrere Redakteure separat gelistet & konfigurierbar (je Redakteur eigener Prompt)
   - ✅ **Einstellungen** — Admin-Bereich zum Pflegen konkreter **Sitemaps** (werden beim Crawl je Domain genutzt)
-  - ⬜ ggf. weitere Bereiche (z. B. Prüf-Archiv)
-- ⬜ Grundlage für mehrere spezialisierte KI-Redakteure (z. B. je Kategorie oder Tone-of-Voice)
+  - ✅ **Prüf-Archiv** als eigener Bereich (Sidebar „Prüf-Archiv“ → `archive.php`)
+- ✅ Grundlage für mehrere spezialisierte KI-Redakteure (`agents`-Tabelle, je Redakteur eigener Prompt/Key) — erster spezialisierter Redakteur `tone_of_voice` (Brand Voice) live; weitere (z. B. je Kategorie) analog ergänzbar
 
 ## Später
 - ✅ **PDF auslesen als Quelle** — Upload eines PDF auf der Startseite (alternativ zur URL); Textextraktion via `pdftotext` (poppler-utils), dann Prüfung gegen die Regeln wie bei URLs (kein Crawl). Upload-Limit 25 MB.
@@ -60,6 +60,26 @@ Nach Identifikation eines kritischen Findings gibt es zwei Wege: **(1) belegen**
 - ✅ **Preview-Treffergenauigkeit** — Fundstellen-Vorschau neu aufgesetzt: statt `window.find` wird der **gesamte sichtbare Seitentext knoten-übergreifend zu einem normalisierten String** zusammengezogen (Kleinschreibung, „…"/Whitespace-Kollaps **analog zur PHP-`strip_tags`-Extraktion**), mit **zeichengenauem Rück-Mapping** auf DOM-Knoten. Treffer per **mehrstufiger Teilstring-Suche** (lange → kurze Phrasen: ganzer Snippet, Mitte/Anfang/Ende-Fenster, zuletzt Trigger-Begriff). Der **Trigger-Begriff** wird aus der Regel an das Skript übergeben (`preview.php` → `preview_shot.mjs`) und **innerhalb** des Kontext-Treffers **kräftig markiert + exakt zentriert** (Kontext dezent). So werden auch über Inline-Tags/Zeilenumbrüche verteilte Stellen korrekt getroffen. Offen bei Bedarf: echte Fuzzy-Toleranz (Tippfehler/OCR-Abweichungen).
 - ⬜ Suchmetriken/Filter für Content-Bausteine
 - ⬜ **Lernen (D) sauber von der Tonalität trennen** — beim Übernehmen einer Umformulierung wird aktuell die **gewählte** Fassung als Trainingsbeispiel gelernt. Wird die **Brand-Voice-Fassung** (`tov_text`) übernommen, fließt der tonal gefärbte Text als Few-Shot in künftige **EmpCo**-Umformulierungen ein und kann den Umformulierungs-Redakteur stilistisch mitprägen. To-do: beim Lernen immer die **EmpCo-konforme Basis** (`text`) als „Nachher" speichern (statt der ToV-Fassung), damit Compliance-Lernen und Tonalität getrennt bleiben.
+
+## 1st Review 28.07.2026
+Selbst-Review des Tools (Bugs, Prüf-/Erstellungs-Schwächen, Usability, Sicherheit). Priorisierte Umsetzung:
+
+- ✅ **Prio 1 · A1 Findings-Sortierung** — `ORDER BY status, severity` ist alphabetisch (`info<violation<warn`, `done<ignored<open`) → Hinweise vor Verstößen, Erledigte über Offenen. Fix per `CASE`-Rang in `results.php` **und** `export.php`.
+- ✅ **Prio 2 · D2/D3 Härtung** — Router liefert jede Datei ohne Auth (`documents/*.md`, `empco_rules.csv`, `*.mjs` öffentlich) → sensible Pfade blocken. Session-Cookies mit `HttpOnly`/`Secure`/`SameSite=Lax` härten.
+- ✅ **Prio 3 · B3 Snippet an Wortgrenzen** — `snippet_window` schneidet hart bei `pos-90` → Wortfragmente. An Wortgrenzen schneiden (verbessert Preview + Umformulierung).
+- ✅ **Prio 4 · B4 Sprache an KI übergeben** — `language` (de/en/auto) wird gespeichert, aber keinem KI-Prompt übergeben (Klassifikation, Nachweis, Umformulierung, ToV). Sprache einspeisen.
+- ✅ **Prio 5 · C1/C3 Filter + Trigger-Highlight** — Findings nach Ampel/Status/Kategorie filterbar; Trigger-Begriff im Zitat hervorheben.
+- ✅ **Prio 6 · B2 Dedup gleicher Findings** — identische (rule_id + normalisierter Snippet) über Seiten gruppieren („auf N Seiten"), spart KI-Kosten + Übersicht.
+- ✅ **Prio 7 · D1/D6/D5 Sicherheit** — SSRF-Blockliste (localhost/private/link-local IPs) im Fetch; CSV-Formula-Injection im Export (`= + - @` prefixen); Login-Throttling gegen Brute-Force.
+- ✅ **Prio 8 · A2/B5 KI-Robustheit** — Index-Zuordnung in `ai_classify` fragil; OpenAI `response_format=json_object` erzwingen + Snippet-Hash zum sicheren Matching.
+
+### Weitere Review-Notizen (nicht priorisiert)
+- A3 Seed-Duplikate: Seed-URL vor Insert wie Kinder-Links normalisieren.
+- A4 Stiller Verlust bei KI-Ausfall in `process_step` → Fallback-`warn`-Findings.
+- A5 Fortschrittsbalken springt zurück (pagesTotal wächst).
+- B7 Kein Kosten-/Umfangslimit bei „Ganze Domain".
+- C2 Bulk-Aktionen, C4 aktuelle Seiten-URL im Fortschritt, C5 Copy/Diff, C7 Preview-Cache-Invalidierung.
+- D4 `APP_PASSWORD` fällt auf `ADMIN_PASSWORD` zurück → in Prod eigenes App-Passwort setzen.
 
 ## Notiz
 Detailfakten in `MUST_READ.md`, Anforderungen in `ANFORDERUNGEN.md`, Design in `DESIGN_SYSTEM.md`.

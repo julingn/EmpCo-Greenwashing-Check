@@ -164,6 +164,20 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   .reform-tov{margin-top:10px;background:var(--green-bg);border-color:var(--green-border)}
   .reform-tov .reform-tag{color:var(--green)}
   .reform.accepted .reform-tag{color:var(--green)}
+  mark.trg{background:rgba(233,12,60,0.16);color:inherit;padding:0 2px;border-radius:3px;font-weight:600}
+  .filter-bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:18px 0 10px}
+  .filter-group{display:inline-flex;gap:6px;flex-wrap:wrap}
+  .fbtn{background:#F1F5F9;color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer}
+  .fbtn:hover{background:#E8EEF5}
+  .fbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .fbtn-n{opacity:.7;font-weight:700;margin-left:2px}
+  .fbtn.active .fbtn-n{opacity:.9}
+  .filter-open{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--text2)}
+  .filter-empty{font-size:13px;color:var(--text3)}
+  .dup-pages{margin:8px 0 2px;font-size:12.5px;color:var(--text2)}
+  .dup-pages summary{cursor:pointer;font-weight:600;color:var(--text2)}
+  .dup-pages ul{margin:6px 0 0;padding-left:18px;max-height:140px;overflow:auto}
+  .dup-pages li{word-break:break-all;margin:2px 0}
   .reform-text{width:100%;min-height:72px;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-family:inherit;font-size:14px;line-height:1.55;background:#fff;color:var(--text);resize:vertical}
   .reform-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
   .finding-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}

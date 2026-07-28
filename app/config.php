@@ -2,6 +2,16 @@
 // Zentrale Konfiguration + Session + Hilfsfunktionen
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    // Hinter dem Railway-Proxy kommt HTTPS als X-Forwarded-Proto an.
+    $secure = (($_SERVER['HTTPS'] ?? '') !== '' && ($_SERVER['HTTPS'] ?? 'off') !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path'     => '/',
+        'httponly' => true,
+        'secure'   => $secure,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 
@@ -107,4 +117,23 @@ function h(?string $s): string {
 /** Zugang zur Eingabeseite (User- oder Admin-Session)? */
 function has_user_access(): bool {
     return !empty($_SESSION['user']) || !empty($_SESSION['admin']);
+}
+
+/**
+ * Einfaches Login-Throttling (Session-basiert + Verzögerung) gegen Brute-Force.
+ * Nach 5 Fehlversuchen wachsende Sperre; jeder Fehlversuch bremst zusätzlich.
+ */
+function login_throttle_ok(string $bucket): bool {
+    $s = $_SESSION['lt_' . $bucket] ?? ['n' => 0, 'until' => 0];
+    return !((int)$s['n'] >= 5 && time() < (int)$s['until']);
+}
+function login_throttle_fail(string $bucket): void {
+    $s = $_SESSION['lt_' . $bucket] ?? ['n' => 0, 'until' => 0];
+    $s['n'] = (int)$s['n'] + 1;
+    if ($s['n'] >= 5) { $s['until'] = time() + 30 * ($s['n'] - 4); } // 30s, 60s, 90s …
+    $_SESSION['lt_' . $bucket] = $s;
+    usleep(400000); // 0,4 s Verzögerung bremst automatisierte Angriffe
+}
+function login_throttle_reset(string $bucket): void {
+    unset($_SESSION['lt_' . $bucket]);
 }

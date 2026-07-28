@@ -117,7 +117,10 @@ try {
         $p = db()->prepare("SELECT * FROM pages WHERE analysis_id = :id ORDER BY id");
         $p->execute([':id' => $id]);
         $pages = $p->fetchAll();
-        $f = db()->prepare("SELECT * FROM findings WHERE analysis_id = :id ORDER BY status, severity, category, rule_id");
+        $f = db()->prepare("SELECT * FROM findings WHERE analysis_id = :id
+            ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END,
+                     CASE severity WHEN 'violation' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
+                     category, rule_id");
         $f->execute([':id' => $id]);
         $findings = $f->fetchAll();
         $rq = db()->prepare("SELECT r.* FROM reformulations r JOIN findings f ON f.id = r.finding_id WHERE f.analysis_id = :id ORDER BY r.accepted DESC, r.id DESC");
@@ -139,10 +142,51 @@ $checkLabel = ['text' => 'Text', 'code' => 'Code', 'js' => 'JS', 'ocr' => 'OCR']
 $scopeLabel = ['exact' => 'Nur exakte URL', 'depth1' => 'Tiefe 1', 'depth2' => 'Tiefe 2', 'full' => 'Ganze Domain', 'pdf' => 'PDF-Dokument'];
 $pageUrls = [];
 foreach ($pages as $pg) { $pageUrls[(int)$pg['id']] = (string)$pg['url']; }
+
+// Dedup: identische (rule_id + normalisierter Snippet) über Seiten zu einer Gruppe.
+// Repräsentant bevorzugt ein offenes Finding; Gruppe merkt sich alle betroffenen Seiten.
+$groups = [];
+foreach ($findings as $ff) {
+    $key = $ff['rule_id'] . '|' . mb_strtolower((string)preg_replace('/\s+/u', ' ', trim((string)$ff['snippet'])));
+    if (!isset($groups[$key])) {
+        $groups[$key] = ['rep' => $ff, 'ids' => [], 'pages' => []];
+    }
+    $groups[$key]['ids'][] = (int)$ff['id'];
+    $pu = $pageUrls[(int)$ff['page_id']] ?? '';
+    if ($pu !== '' && !in_array($pu, $groups[$key]['pages'], true)) { $groups[$key]['pages'][] = $pu; }
+    if ($ff['status'] === 'open' && $groups[$key]['rep']['status'] !== 'open') { $groups[$key]['rep'] = $ff; }
+}
+$groupReps = array_map(static fn($g) => $g['rep'], $groups);
+
 $counts = ['open' => 0, 'ignored' => 0, 'done' => 0];
-foreach ($findings as $ff) { $counts[$ff['status']] = ($counts[$ff['status']] ?? 0) + 1; }
+foreach ($groupReps as $ff) { $counts[$ff['status']] = ($counts[$ff['status']] ?? 0) + 1; }
 $sevCounts = ['violation' => 0, 'warn' => 0, 'info' => 0];
-foreach ($findings as $ff) { $sevCounts[$ff['severity']] = ($sevCounts[$ff['severity']] ?? 0) + 1; }
+foreach ($groupReps as $ff) { $sevCounts[$ff['severity']] = ($sevCounts[$ff['severity']] ?? 0) + 1; }
+
+// Trigger-Begriffe je Regel (für Hervorhebung im Zitat), längste zuerst.
+$ruleTriggers = [];
+try {
+    foreach (db()->query("SELECT rule_id, trigger_terms FROM rules")->fetchAll() as $rr) {
+        $terms = array_filter(array_map('trim', explode(',', (string)$rr['trigger_terms'])));
+        usort($terms, fn($a, $b) => mb_strlen($b) - mb_strlen($a));
+        $ruleTriggers[(string)$rr['rule_id']] = $terms;
+    }
+} catch (Throwable $e) { $ruleTriggers = []; }
+
+/** Hebt Trigger-Begriffe im (escapten) Snippet hervor. */
+function highlight_terms(string $snippet, array $terms): string {
+    foreach ($terms as $t) {
+        if ($t === '') { continue; }
+        $pos = mb_stripos($snippet, $t);
+        if ($pos !== false) {
+            $before = mb_substr($snippet, 0, $pos);
+            $match  = mb_substr($snippet, $pos, mb_strlen($t));
+            $after  = mb_substr($snippet, $pos + mb_strlen($t));
+            return h($before) . '<mark class="trg">' . h($match) . '</mark>' . highlight_terms($after, $terms);
+        }
+    }
+    return h($snippet);
+}
 
 page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
 ?>
@@ -220,7 +264,7 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
   <?php if (!$findings): ?>
     <div class="card"><p class="sub" style="margin:0">Keine Verstöße gefunden.</p></div>
   <?php else:
-    $totalF = count($findings);
+    $totalF = count($groupReps);
     $donutSegs = [
         ['Verstoß', 'var(--red)',    (int)$sevCounts['violation'], 'klar irreführend / unbelegt'],
         ['Prüfen',  'var(--amber)',  (int)$sevCounts['warn'],      'kontextabhängig — manuell prüfen'],
@@ -270,15 +314,28 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
       </div>
     </div>
 
-    <?php foreach ($findings as $f):
+    <div class="filter-bar">
+      <div class="filter-group" data-filter="sev">
+        <button type="button" class="fbtn active" data-val="all">Alle <span class="fbtn-n"><?= $totalF ?></span></button>
+        <button type="button" class="fbtn" data-val="violation">Verstoß <span class="fbtn-n"><?= (int)$sevCounts['violation'] ?></span></button>
+        <button type="button" class="fbtn" data-val="warn">Prüfen <span class="fbtn-n"><?= (int)$sevCounts['warn'] ?></span></button>
+        <button type="button" class="fbtn" data-val="info">Hinweis <span class="fbtn-n"><?= (int)$sevCounts['info'] ?></span></button>
+      </div>
+      <label class="filter-open"><input type="checkbox" id="onlyOpen"> Nur offene</label>
+      <span class="filter-empty" id="filterEmpty" hidden>Keine Findings für diese Auswahl.</span>
+    </div>
+
+    <?php foreach ($groups as $grp):
+        $f = $grp['rep'];
         $sev = $f['severity'];
         $st  = $f['status'];
         $resolved = $st !== 'open' ? ' resolved' : '';
         $pgUrl = $pageUrls[(int)$f['page_id']] ?? '';
         $pgPath = $pgUrl !== '' ? (parse_url($pgUrl, PHP_URL_PATH) ?: '/') : '';
         $rf = $reforms[(int)$f['id']] ?? null;
+        $dupPages = count($grp['pages']);
     ?>
-      <div class="finding <?= h($sev) . $resolved ?>" id="f<?= (int)$f['id'] ?>">
+      <div class="finding <?= h($sev) . $resolved ?>" id="f<?= (int)$f['id'] ?>" data-sev="<?= h($sev) ?>" data-status="<?= h($st) ?>">
         <div class="finding-head">
           <span class="sev-name"><?= h($sevLabel[$sev] ?? $sev) ?></span>
           <span class="finding-cat"><?= h($f['category']) ?></span>
@@ -298,7 +355,17 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
           <?php if ($st !== 'open'): ?><span class="finding-status">· <?= h($statusLabel[$st] ?? $st) ?></span><?php endif; ?>
           <span class="finding-meta"><?= h($f['rule_id']) ?><br><?= h($f['content_type']) ?></span>
         </div>
-        <div class="finding-quote">„<?= h($f['snippet']) ?>"</div>
+        <div class="finding-quote">„<?= highlight_terms((string)$f['snippet'], $ruleTriggers[$f['rule_id']] ?? []) ?>"</div>
+        <?php if ($dupPages > 1): ?>
+          <details class="dup-pages">
+            <summary>Gleiche Fundstelle auf <?= (int)$dupPages ?> Seiten</summary>
+            <ul>
+              <?php foreach ($grp['pages'] as $pgu): ?>
+                <li><a href="<?= h($pgu) ?>" target="_blank" rel="noopener"><?= h($pgu) ?></a></li>
+              <?php endforeach; ?>
+            </ul>
+          </details>
+        <?php endif; ?>
         <div class="finding-assess"><?= h($f['assessment']) ?></div>
         <?php if (!empty($f['remedy_path'])):
             $rp = $f['remedy_path'];
@@ -421,6 +488,36 @@ document.querySelectorAll('.preview-wrap').forEach(function(w){
     img.src = img.getAttribute('data-src');
   });
 });
+
+// Findings-Filter (Ampel + nur offene) — rein clientseitig
+(function(){
+  var bar = document.querySelector('.filter-bar');
+  if(!bar){ return; }
+  var sev = 'all', onlyOpen = false;
+  var empty = document.getElementById('filterEmpty');
+  var findings = Array.prototype.slice.call(document.querySelectorAll('.finding'));
+  function apply(){
+    var visible = 0;
+    findings.forEach(function(el){
+      var okSev  = sev === 'all' || el.getAttribute('data-sev') === sev;
+      var okOpen = !onlyOpen || el.getAttribute('data-status') === 'open';
+      var show = okSev && okOpen;
+      el.style.display = show ? '' : 'none';
+      if(show){ visible++; }
+    });
+    if(empty){ empty.hidden = visible !== 0; }
+  }
+  bar.querySelectorAll('[data-filter="sev"] .fbtn').forEach(function(b){
+    b.addEventListener('click', function(){
+      bar.querySelectorAll('[data-filter="sev"] .fbtn').forEach(function(x){ x.classList.remove('active'); });
+      b.classList.add('active');
+      sev = b.getAttribute('data-val');
+      apply();
+    });
+  });
+  var oo = document.getElementById('onlyOpen');
+  if(oo){ oo.addEventListener('change', function(){ onlyOpen = oo.checked; apply(); }); }
+})();
 </script>
 <?php
 page_foot();

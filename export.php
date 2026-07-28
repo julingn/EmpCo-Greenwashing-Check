@@ -17,7 +17,10 @@ try {
     $analysis = $a->fetch();
     if (!$analysis) { http_response_code(404); exit('Prüflauf nicht gefunden.'); }
 
-    $f = db()->prepare("SELECT f.*, p.url AS page_url FROM findings f LEFT JOIN pages p ON p.id = f.page_id WHERE f.analysis_id = :id ORDER BY f.status, f.severity, f.category, f.rule_id");
+    $f = db()->prepare("SELECT f.*, p.url AS page_url FROM findings f LEFT JOIN pages p ON p.id = f.page_id WHERE f.analysis_id = :id
+        ORDER BY CASE f.status WHEN 'open' THEN 0 WHEN 'done' THEN 1 ELSE 2 END,
+                 CASE f.severity WHEN 'violation' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
+                 f.category, f.rule_id");
     $f->execute([':id' => $id]);
     $findings = $f->fetchAll();
 } catch (Throwable $e) {
@@ -36,13 +39,25 @@ $out = fopen('php://output', 'w');
 fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM für Excel
 
 $delim = ';';
-fputcsv($out, ['Quelle', $analysis['source_ref']], $delim);
-fputcsv($out, ['Umfang', $analysis['scope'], 'Sprache', $analysis['language'], 'Datum', $analysis['created_at']], $delim);
-fputcsv($out, [], $delim);
-fputcsv($out, ['Rule-ID', 'Kategorie', 'Schweregrad', 'Status', 'Inhaltsart', 'Seite', 'Fundstelle', 'Begründung'], $delim);
+
+// Schutz vor CSV-Formula-Injection: Zellen, die mit = + - @ (oder Tab/CR) beginnen,
+// mit einem Apostroph neutralisieren, damit Excel sie nicht als Formel ausführt.
+$csvSafe = static function ($v): string {
+    $v = (string) $v;
+    if ($v !== '' && preg_match('/^[=+\-@\t\r]/', $v)) { return "'" . $v; }
+    return $v;
+};
+$putRow = static function ($row) use ($out, $delim, $csvSafe) {
+    fputcsv($out, array_map($csvSafe, $row), $delim);
+};
+
+$putRow(['Quelle', $analysis['source_ref']]);
+$putRow(['Umfang', $analysis['scope'], 'Sprache', $analysis['language'], 'Datum', $analysis['created_at']]);
+$putRow([]);
+$putRow(['Rule-ID', 'Kategorie', 'Schweregrad', 'Status', 'Inhaltsart', 'Seite', 'Fundstelle', 'Begründung']);
 
 foreach ($findings as $r) {
-    fputcsv($out, [
+    $putRow([
         $r['rule_id'],
         $r['category'],
         $sevLabel[$r['severity']] ?? $r['severity'],
@@ -51,6 +66,6 @@ foreach ($findings as $r) {
         $r['page_url'] ?? '',
         $r['snippet'],
         $r['assessment'],
-    ], $delim);
+    ]);
 }
 fclose($out);

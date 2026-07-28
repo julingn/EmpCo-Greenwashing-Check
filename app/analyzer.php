@@ -2,8 +2,49 @@
 // Analyse-Engine: URL auslesen, Inhalte gegen Regeln prüfen (Trigger + KI)
 require_once __DIR__ . '/ai.php';
 
+/**
+ * SSRF-Schutz: blockt nicht-öffentliche Ziele (localhost, private/reservierte IPs,
+ * Cloud-Metadata 169.254.x). Nicht auflösbare Hosts werden ebenfalls geblockt.
+ */
+function is_blocked_host(string $host): bool {
+    $host = trim($host);
+    if ($host === '') { return true; }
+    $host = rtrim($host, '.');
+
+    $ips = [];
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        $ips = [$host];
+    } else {
+        $recs = @dns_get_record($host, DNS_A | DNS_AAAA);
+        if (is_array($recs)) {
+            foreach ($recs as $r) {
+                if (!empty($r['ip']))   { $ips[] = $r['ip']; }
+                if (!empty($r['ipv6'])) { $ips[] = $r['ipv6']; }
+            }
+        }
+        if (!$ips) { $l = @gethostbynamel($host); if (is_array($l)) { $ips = $l; } }
+    }
+    if (!$ips) { return true; } // nicht auflösbar → blocken
+
+    foreach ($ips as $ip) {
+        // Private/reservierte Bereiche → blocken
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return true;
+        }
+        // Loopback/Link-local zusätzlich explizit (IPv4 + IPv6)
+        if (preg_match('#^(127\.|0\.|169\.254\.|::1$|fe80:|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)#i', $ip)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /** Lädt eine URL herunter. */
 function fetch_url(string $url, int $timeout = 30): array {
+    $host = (string) (parse_url($url, PHP_URL_HOST) ?: '');
+    if (!preg_match('#^https?://#i', $url) || is_blocked_host($host)) {
+        return ['html' => '', 'code' => 0, 'error' => 'Blockierte oder nicht auflösbare URL'];
+    }
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -12,6 +53,8 @@ function fetch_url(string $url, int $timeout = 30): array {
         CURLOPT_TIMEOUT        => $timeout,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; EmpCo-Greenwashing-Check/1.0)',
         CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
     ]);
     $html = curl_exec($ch);
     $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -326,6 +369,8 @@ function extract_image_urls(string $html, string $baseUrl): array {
 
 /** Lädt eine Datei per cURL herunter. */
 function download_file(string $url, string $dest): bool {
+    $host = (string) (parse_url($url, PHP_URL_HOST) ?: '');
+    if (!preg_match('#^https?://#i', $url) || is_blocked_host($host)) { return false; }
     $fp = @fopen($dest, 'wb');
     if (!$fp) { return false; }
     $ch = curl_init($url);
@@ -336,6 +381,8 @@ function download_file(string $url, string $dest): bool {
         CURLOPT_TIMEOUT        => 15,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; EmpCo-OCR/1.0)',
         CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
     ]);
     $ok   = curl_exec($ch);
     $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -502,10 +549,11 @@ function step_status(int $analysisId, string $phase, bool $finished): array {
  */
 function process_step(int $analysisId, int $size = 12): array {
     $id = (int) $analysisId;
-    $a  = db()->query("SELECT scope, use_js, use_ocr FROM analyses WHERE id = $id")->fetch();
+    $a  = db()->query("SELECT scope, language, use_js, use_ocr FROM analyses WHERE id = $id")->fetch();
     $cfg = scope_config((string) ($a['scope'] ?? 'exact'));
     $useJs  = !empty($a['use_js']);
     $useOcr = !empty($a['use_ocr']);
+    $lang   = in_array($a['language'] ?? '', ['de', 'en'], true) ? (string)$a['language'] : 'auto';
     $seedRow  = db()->query("SELECT url FROM pages WHERE analysis_id = $id AND depth = 0 ORDER BY id LIMIT 1")->fetch();
     $seedUrl  = $seedRow ? (string) $seedRow['url'] : '';
     $sp       = seed_prefix($seedUrl);
@@ -528,7 +576,7 @@ function process_step(int $analysisId, int $size = 12): array {
     if ($batch) {
         $rules = db()->query("SELECT * FROM rules WHERE active")->fetchAll();
         try {
-            $classified = ai_classify($batch, $rules);
+            $classified = ai_classify($batch, $rules, $lang);
             $ins = db()->prepare(
                 "INSERT INTO findings (analysis_id, page_id, rule_id, category, content_type, snippet, assessment, severity, status)
                  VALUES (:a, :p, :rid, :cat, :ct, :snip, :ass, :sev, 'open')"
@@ -581,15 +629,28 @@ function is_boilerplate(string $unit): bool {
     return ($punct <= 1 && $words >= 25);
 }
 
-/** Schneidet einen fokussierten Ausschnitt rund um den Trigger-Begriff aus. */
+/** Schneidet einen fokussierten Ausschnitt rund um den Trigger-Begriff aus (an Wortgrenzen). */
 function snippet_window(string $unit, string $term): string {
+    $total = mb_strlen($unit);
     $pos = mb_stripos($unit, $term);
     if ($pos === false) { return trim(mb_substr($unit, 0, 240)); }
+
     $start = max(0, $pos - 90);
-    $len   = mb_strlen($term) + 180;
-    $snip  = mb_substr($unit, $start, $len);
+    $end   = min($total, $pos + mb_strlen($term) + 90);
+
+    // An Wortgrenzen ausrichten, damit keine Wörter angeschnitten werden.
+    if ($start > 0) {
+        $sp = mb_strrpos(mb_substr($unit, 0, $start), ' ');
+        $start = ($sp === false) ? 0 : $sp + 1;   // Anfang des angeschnittenen Wortes
+    }
+    if ($end < $total) {
+        $sp = mb_strpos(mb_substr($unit, $end), ' ');
+        $end = ($sp === false) ? $total : $end + $sp; // Ende beim nächsten Leerzeichen
+    }
+
+    $snip = mb_substr($unit, $start, $end - $start);
     if ($start > 0) { $snip = '…' . $snip; }
-    if ($start + $len < mb_strlen($unit)) { $snip .= '…'; }
+    if ($end < $total) { $snip .= '…'; }
     return trim($snip);
 }
 
@@ -627,8 +688,29 @@ function build_candidates(array $rules, string $text, array $attrs): array {
     return array_slice($cands, 0, 120); // Obergrenze für KI-Aufwand
 }
 
+/** Sprach-Hinweis für KI-Prompts (Analyse-Sprache de/en/auto). */
+function language_hint(string $lang): string {
+    return match ($lang) {
+        'de' => ' Antworte auf Deutsch.',
+        'en' => ' Antworte auf Englisch (respond in English).',
+        default => ' Antworte in derselben Sprache wie die geprüfte Fundstelle.',
+    };
+}
+
+/** Analyse-Sprache (de|en|auto) zu einem Finding/einer Analyse. */
+function analysis_language(int $analysisId): string {
+    try {
+        $st = db()->prepare("SELECT language FROM analyses WHERE id = :id");
+        $st->execute([':id' => $analysisId]);
+        $l = (string) ($st->fetchColumn() ?: 'auto');
+        return in_array($l, ['de', 'en'], true) ? $l : 'auto';
+    } catch (Throwable $e) {
+        return 'auto';
+    }
+}
+
 /** Lässt die KI jeden Kandidaten bewerten. Verwirft NICHTS (deterministische Finding-Menge). */
-function ai_classify(array $candidates, array $rules): array {
+function ai_classify(array $candidates, array $rules, string $lang = 'auto'): array {
     $ruleMap = [];
     foreach ($rules as $r) { $ruleMap[$r['rule_id']] = $r; }
 
@@ -637,8 +719,11 @@ function ai_classify(array $candidates, array $rules): array {
         . "Beurteile JEDE Stelle im Kontext der genannten Regel und vergib eine severity: "
         . "'violation' = klar irreführend/unbelegt; 'warn' = potenziell problematisch/kontextabhängig; "
         . "'info' = kein echter Umweltbezug/Fehltreffer ODER eindeutig konform (Beleg/Quelle/Zertifikat dabei). "
-        . "Verwirf nichts — jede Stelle bekommt eine severity. Antworte AUSSCHLIESSLICH als JSON-Array in "
-        . "Kandidaten-Reihenfolge, ohne Markdown: [{\"i\":0,\"severity\":\"violation\",\"assessment\":\"kurze Begründung\"}].";
+        . "Verwirf nichts — jede Stelle bekommt eine severity. Antworte AUSSCHLIESSLICH als JSON-Objekt ohne "
+        . "Markdown mit dem Schlüssel \"results\" (Array in Kandidaten-Reihenfolge, das Feld 'i' ist die "
+        . "Kandidaten-Nummer aus der Eingabe): "
+        . "{\"results\":[{\"i\":0,\"severity\":\"violation\",\"assessment\":\"kurze Begründung\"}]}."
+        . " Die 'assessment'-Begründung in der geforderten Sprache:" . language_hint($lang);
 
     $out = [];
     foreach (array_chunk($candidates, 20, false) as $batch) {
@@ -652,8 +737,16 @@ function ai_classify(array $candidates, array $rules): array {
         }
         $byI = [];
         try {
-            $raw = call_ai($system, "KANDIDATEN:\n{$list}");
-            foreach (parse_json_array($raw) as $v) {
+            $raw = call_ai($system, "KANDIDATEN:\n{$list}", true);
+            // Robust: JSON-Objekt {results:[…]} bevorzugt, sonst Fallback auf blankes Array.
+            $items = [];
+            try {
+                $obj = parse_json_object($raw);
+                $items = is_array($obj['results'] ?? null) ? $obj['results'] : [];
+            } catch (Throwable $e) {
+                $items = parse_json_array($raw);
+            }
+            foreach ($items as $v) {
                 if (isset($v['i'])) { $byI[(int)$v['i']] = $v; }
             }
         } catch (Throwable $e) {
@@ -749,13 +842,14 @@ function nachweis_check(int $findingId): array {
             . "'belegt_anpassen' = Beleg vorhanden, aber die Formulierung bleibt irreführend → Beleg + Umformulierung nötig; "
             . "'nicht_belegbar' = kein Beleg deckt die Aussage ab → Umformulierung nötig. "
             . "Antworte AUSSCHLIESSLICH als JSON ohne Markdown: "
-            . "{\"path\":\"belegbar|belegt_anpassen|nicht_belegbar\",\"evidence\":\"Titel des passenden Belegs oder leer\",\"note\":\"kurze Begründung + ggf. empfohlener Quellen-/Zusatztext\"}.";
+            . "{\"path\":\"belegbar|belegt_anpassen|nicht_belegbar\",\"evidence\":\"Titel des passenden Belegs oder leer\",\"note\":\"kurze Begründung + ggf. empfohlener Quellen-/Zusatztext\"}."
+            . " Die 'note'-Begründung:" . language_hint(analysis_language((int)$f['analysis_id']));
         $user = "FUNDSTELLE: \"" . mb_substr((string)$f['snippet'], 0, 600) . "\"\n"
             . "REGEL: {$f['rule_id']} [{$f['category']}]\n"
             . "BISHERIGE BEWERTUNG: " . mb_substr((string)$f['assessment'], 0, 400) . "\n\n"
             . "VORLIEGENDE BELEGE:\n{$list}";
         try {
-            $data = parse_json_object(call_ai($system, $user));
+            $data = parse_json_object(call_ai($system, $user, true));
             $path = in_array($data['path'] ?? '', ['belegbar', 'belegt_anpassen', 'nicht_belegbar'], true) ? $data['path'] : 'nicht_belegbar';
             $res = ['path' => $path, 'evidence' => (string)($data['evidence'] ?? ''), 'note' => (string)($data['note'] ?? '')];
         } catch (Throwable $e) {
@@ -818,7 +912,8 @@ function apply_tone_of_voice(string $text, array $f): array {
     $user = "EMPCO-KONFORMER TEXT (nur tonal anpassen, Konformität nicht verändern):\n\"{$text}\"\n\n"
         . "AUFGABE: Passe ausschließlich die Tonalität an die Brand Voice an. Behalte Sprache, Kernbotschaft "
         . "und alle belegten Konkretisierungen bei. Führe keine neuen Umwelt-/Nachhaltigkeitsaussagen ein. "
-        . "Antworte NUR mit dem angepassten Text (ohne Anführungszeichen, ohne Erläuterung).";
+        . "Antworte NUR mit dem angepassten Text (ohne Anführungszeichen, ohne Erläuterung)."
+        . language_hint(analysis_language((int)($f['analysis_id'] ?? 0)));
     try {
         $toned = trim(call_ai($sys, $user));
         $toned = trim($toned, "\"'„“ \n\r\t");
@@ -919,7 +1014,8 @@ function generate_reformulation(int $findingId): array {
         . "BEWERTUNG: " . mb_substr((string)$f['assessment'], 0, 400) . "\n\n"
         . $ctx
         . "AUFGABE: Formuliere die beanstandete Textstelle EmpCo-konform um. Behalte Sprache und Kernbotschaft bei. "
-        . "Antworte NUR mit dem umformulierten Text (ohne Anführungszeichen, ohne Erläuterung).";
+        . "Antworte NUR mit dem umformulierten Text (ohne Anführungszeichen, ohne Erläuterung)."
+        . language_hint(analysis_language((int)$f['analysis_id']));
 
     try {
         $text = trim(call_ai($system, $user));

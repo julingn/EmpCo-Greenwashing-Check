@@ -17,13 +17,17 @@ $gateError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['access_password'])) {
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $gateError = 'Ungültiges Formular. Bitte erneut versuchen.';
+    } elseif (!login_throttle_ok('app')) {
+        $gateError = 'Zu viele Fehlversuche. Bitte kurz warten und erneut versuchen.';
     } elseif (APP_PASSWORD === '') {
         $gateError = 'Kein Zugangspasswort konfiguriert (ADMIN_PASSWORD oder APP_PASSWORD in Railway setzen).';
     } elseif (hash_equals(APP_PASSWORD, (string)$_POST['access_password'])) {
+        login_throttle_reset('app');
         $_SESSION['user'] = true;
         header('Location: /');
         exit;
     } else {
+        login_throttle_fail('app');
         $gateError = 'Falsches Passwort.';
     }
 }

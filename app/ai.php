@@ -3,11 +3,12 @@
 
 /**
  * Ruft ein KI-Modell mit System- und User-Prompt auf.
+ * @param bool $json  Bei true fordert OpenAI ein striktes JSON-Objekt an (response_format).
  * @throws RuntimeException bei Konfigurations- oder API-Fehlern
  */
-function call_ai(string $system, string $user): string {
+function call_ai(string $system, string $user, bool $json = false): string {
     if (OPENAI_API_KEY !== '') {
-        return call_openai($system, $user);
+        return call_openai($system, $user, $json);
     }
     if (ANTHROPIC_API_KEY !== '') {
         return call_anthropic($system, $user);
@@ -15,15 +16,19 @@ function call_ai(string $system, string $user): string {
     throw new RuntimeException('Kein KI-Schlüssel gesetzt (OPENAI_API_KEY oder ANTHROPIC_API_KEY).');
 }
 
-function call_openai(string $system, string $user): string {
-    $payload = json_encode([
+function call_openai(string $system, string $user, bool $json = false): string {
+    $body = [
         'model'       => OPENAI_MODEL,
         'temperature' => 0,
         'messages' => [
             ['role' => 'system', 'content' => $system],
             ['role' => 'user',   'content' => $user],
         ],
-    ]);
+    ];
+    if ($json) {
+        $body['response_format'] = ['type' => 'json_object'];
+    }
+    $payload = json_encode($body);
     $res = http_post_json('https://api.openai.com/v1/chat/completions', $payload, [
         'Authorization: Bearer ' . OPENAI_API_KEY,
         'Content-Type: application/json',

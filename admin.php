@@ -16,13 +16,17 @@ $loginError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $loginError = 'Ungültiges Formular. Bitte erneut versuchen.';
+    } elseif (!login_throttle_ok('admin')) {
+        $loginError = 'Zu viele Fehlversuche. Bitte kurz warten und erneut versuchen.';
     } elseif (ADMIN_PASSWORD === '') {
         $loginError = 'Kein Admin-Passwort konfiguriert (ADMIN_PASSWORD in Railway setzen).';
     } elseif (hash_equals(ADMIN_PASSWORD, (string)$_POST['password'])) {
+        login_throttle_reset('admin');
         $_SESSION['admin'] = true;
         header('Location: /admin.php');
         exit;
     } else {
+        login_throttle_fail('admin');
         $loginError = 'Falsches Passwort.';
     }
 }
