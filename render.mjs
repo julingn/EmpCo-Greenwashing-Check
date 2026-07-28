@@ -57,8 +57,16 @@ const ACCEPT = [
 
     const data = await page.evaluate(() => {
       const clone = document.body.cloneNode(true);
-      clone.querySelectorAll('script, style, noscript, svg, nav').forEach(e => e.remove());
-      const text = (clone.innerText || '').replace(/\s+/g, ' ').trim();
+      clone.querySelectorAll(
+        'script, style, noscript, svg, nav, ' +
+        '[class*="breadcrumb" i], [id*="breadcrumb" i], [aria-label*="breadcrumb" i], [itemtype*="BreadcrumbList" i]'
+      ).forEach(e => e.remove());
+      // Überschriften/Absätze als eigene Zeilen erhalten (innerText liefert Blockumbrüche)
+      const text = (clone.innerText || '')
+        .replace(/[^\S\r\n]+/g, ' ')
+        .replace(/\s*\n\s*/g, '\n')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
       const attrs = [...document.querySelectorAll('[title],[alt],[aria-label]')]
         .map(e => (e.getAttribute('title') || e.getAttribute('alt') || e.getAttribute('aria-label') || '').trim())
         .filter(s => s.length >= 3 && s.length <= 300);

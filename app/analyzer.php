@@ -72,8 +72,16 @@ function extract_content(string $html): array {
     // Navigation, Skripte, Styles, SVG und Kommentare entfernen (Menü-Rauschen raus)
     $clean = preg_replace('#<(script|style|noscript|nav|svg)\b[^>]*>.*?</\1>#is', ' ', $html) ?? $html;
     $clean = preg_replace('#<!--.*?-->#s', ' ', $clean) ?? $clean;
+    // Breadcrumbs ignorieren (Container mit "breadcrumb" in class/id/aria-label oder Schema BreadcrumbList)
+    $clean = preg_replace('#<(nav|ol|ul|div|section|span|p)\b[^>]*(?:class|id|aria-label)\s*=\s*["\'][^"\']*breadcrumb[^"\']*["\'][^>]*>.*?</\1>#is', ' ', $clean) ?? $clean;
+    $clean = preg_replace('#<(nav|ol|ul|div|section)\b[^>]*itemtype\s*=\s*["\'][^"\']*BreadcrumbList[^"\']*["\'][^>]*>.*?</\1>#is', ' ', $clean) ?? $clean;
+    // Überschriften (h1–h6) und Absätze (<p>) als eigene Abschnitte markieren (Zeilenumbruch als Blockgrenze)
+    $clean = preg_replace('#</?(h[1-6]|p)\b[^>]*>#i', "\n", $clean) ?? $clean;
     $text  = html_entity_decode(strip_tags($clean), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $text  = preg_replace('/\s+/u', ' ', $text);
+    // Horizontale Whitespaces zusammenfassen, Blockgrenzen (Zeilenumbrüche) erhalten
+    $text  = preg_replace('/[^\S\r\n]+/u', ' ', (string)$text) ?? (string)$text;
+    $text  = preg_replace('/\s*\n\s*/u', "\n", $text) ?? $text;
+    $text  = preg_replace('/\n{2,}/u', "\n", $text) ?? $text;
     return ['text' => trim((string)$text), 'attrs' => $attrs];
 }
 
@@ -610,15 +618,19 @@ function save_page(int $analysisId, string $url, array $checks): int {
     return (int) $stmt->fetchColumn();
 }
 
-/** Zerlegt Text in Sätze/Zeilen als Prüf-Einheiten. */
+/**
+ * Zerlegt Text in Prüf-Einheiten. Überschriften und Absätze sind durch
+ * Zeilenumbrüche als eigene Blöcke markiert → jeder Block ist ein Abschnitt.
+ * Ohne Blockstruktur (z. B. PDF-/Fließtext) wird satzweise zerlegt.
+ */
 function split_units(string $text): array {
-    $parts = preg_split('/(?<=[.!?…])\s+|\r?\n+/u', $text) ?: [$text];
-    $out = [];
-    foreach ($parts as $p) {
-        $p = trim($p);
-        if ($p !== '') { $out[] = $p; }
+    $blocks = preg_split('/\r?\n+/u', $text) ?: [$text];
+    $blocks = array_values(array_filter(array_map('trim', $blocks), fn($s) => $s !== ''));
+    if (count($blocks) <= 1) {
+        $parts  = preg_split('/(?<=[.!?…])\s+/u', $text) ?: [$text];
+        $blocks = array_values(array_filter(array_map('trim', $parts), fn($s) => $s !== ''));
     }
-    return $out;
+    return $blocks;
 }
 
 /** Erkennt Navigations-/Linklisten (lange Blöcke ohne Satzzeichen) → nicht prüfen. */
