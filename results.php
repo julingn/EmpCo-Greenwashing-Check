@@ -78,12 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'refor
     if (csrf_check($_POST['csrf'] ?? null)) {
         $rid = (int)($_POST['rid'] ?? 0);
         $txt = trim($_POST['reform_text'] ?? '');
+        $accAgents = trim($_POST['acc_agents'] ?? '');
         try {
             $row = db()->prepare("SELECT finding_id FROM reformulations WHERE id = :id");
             $row->execute([':id' => $rid]);
             $fidOf = (int)($row->fetchColumn() ?: 0);
-            db()->prepare("UPDATE reformulations SET text = :t, accepted = TRUE WHERE id = :id")
-                ->execute([':t' => mb_substr($txt, 0, 4000), ':id' => $rid]);
+            db()->prepare("UPDATE reformulations SET text = :t, accepted = TRUE, tov_text = NULL, agents_used = COALESCE(NULLIF(:ag, ''), agents_used) WHERE id = :id")
+                ->execute([':t' => mb_substr($txt, 0, 4000), ':ag' => $accAgents, ':id' => $rid]);
             if ($fidOf > 0) {
                 db()->prepare("DELETE FROM reformulations WHERE finding_id = :f AND id <> :id")
                     ->execute([':f' => $fidOf, ':id' => $rid]);
@@ -310,21 +311,59 @@ page_head('Ergebnis — EmpCo Greenwashing-Check', 'analyse');
             <?php if (!empty($f['remedy_note'])): ?><div class="remedy-note"><?= h($f['remedy_note']) ?></div><?php endif; ?>
           </div>
         <?php endif; ?>
-        <?php if ($rf): $accepted = !empty($rf['accepted']); $kindLbl = $rf['kind'] === 'example' ? 'Vorschlag (geprüftes Beispiel)' : ($rf['kind'] === 'manual' ? 'Manuell' : 'KI-Vorschlag'); ?>
-          <div class="reform<?= $accepted ? ' accepted' : '' ?>">
-            <div class="reform-tag"><?= $accepted ? '✓ Übernommene Umformulierung' : ('✎ ' . h($kindLbl)) ?><?php if (!empty($rf['agents_used'])): ?> <span class="reform-agents">· <?= h($rf['agents_used']) ?></span><?php endif; ?></div>
+        <?php if ($rf):
+            $accepted = !empty($rf['accepted']);
+            $kindLbl = $rf['kind'] === 'example' ? 'Vorschlag (geprüftes Beispiel)' : ($rf['kind'] === 'manual' ? 'Manuell' : 'KI-Vorschlag');
+            $baseAgents = $rf['kind'] === 'example' ? 'Rechtsgeprüftes Beispiel' : 'EmpCo-Redakteur';
+            $tovAgents = 'EmpCo-Redakteur + Tonalität (Brand Voice)';
+            $hasTov = !$accepted && !empty($rf['tov_text']);
+        ?>
+          <?php if ($accepted): ?>
+          <div class="reform accepted">
+            <div class="reform-tag">✓ Übernommene Umformulierung<?php if (!empty($rf['agents_used'])): ?> <span class="reform-agents">· <?= h($rf['agents_used']) ?></span><?php endif; ?></div>
             <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
               <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
               <input type="hidden" name="rid" value="<?= (int)$rf['id'] ?>">
               <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
               <textarea name="reform_text" class="reform-text"><?= h($rf['text']) ?></textarea>
               <div class="reform-actions">
-                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok"><?= $accepted ? '✓ Änderung speichern' : '✓ Übernehmen' ?></button>
-                <?php if ($tovActive): ?><button type="submit" name="action" value="tone_of_voice" class="btn-soft" formnovalidate title="Wendet die Brand Voice auf den obigen Text an">🎨 Tonalität anpassen</button><?php endif; ?>
+                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok">✓ Änderung speichern</button>
                 <button type="submit" name="action" value="reformulation_reject" class="btn-soft" formnovalidate>✕ Verwerfen</button>
               </div>
             </form>
           </div>
+          <?php else: ?>
+          <div class="reform">
+            <div class="reform-tag">✎ <?= h($kindLbl) ?> <span class="reform-agents">· EmpCo-konform</span></div>
+            <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
+              <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+              <input type="hidden" name="rid" value="<?= (int)$rf['id'] ?>">
+              <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
+              <input type="hidden" name="acc_agents" value="<?= h($baseAgents) ?>">
+              <textarea name="reform_text" class="reform-text"><?= h($rf['text']) ?></textarea>
+              <div class="reform-actions">
+                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok">✓ Übernehmen</button>
+                <?php if ($tovActive): ?><button type="submit" name="action" value="tone_of_voice" class="btn-soft" formnovalidate title="Erzeugt aus diesem Text eine MVV-Brand-Voice-Fassung"><?= $hasTov ? '🎨 Tonalität neu erzeugen' : '🎨 Tonalität anpassen' ?></button><?php endif; ?>
+                <button type="submit" name="action" value="reformulation_reject" class="btn-soft" formnovalidate>✕ Verwerfen</button>
+              </div>
+            </form>
+          </div>
+          <?php if ($hasTov): ?>
+          <div class="reform reform-tov">
+            <div class="reform-tag">🎨 Mit MVV Brand Voice <span class="reform-agents">· <?= h($tovAgents) ?></span></div>
+            <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">
+              <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+              <input type="hidden" name="rid" value="<?= (int)$rf['id'] ?>">
+              <input type="hidden" name="fid" value="<?= (int)$f['id'] ?>">
+              <input type="hidden" name="acc_agents" value="<?= h($tovAgents) ?>">
+              <textarea name="reform_text" class="reform-text"><?= h($rf['tov_text']) ?></textarea>
+              <div class="reform-actions">
+                <button type="submit" name="action" value="reformulation_accept" class="btn-soft ok">✓ Diese Version übernehmen</button>
+              </div>
+            </form>
+          </div>
+          <?php endif; ?>
+          <?php endif; ?>
         <?php endif; ?>
         <div class="finding-actions">
           <form method="post" action="/results.php?id=<?= (int)$id ?>" style="margin:0">

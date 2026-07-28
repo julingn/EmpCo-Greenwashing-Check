@@ -161,6 +161,8 @@ function page_head(string $title, string $active = '', bool $bare = false): void
   .reform.accepted{background:var(--green-bg);border-color:var(--green-border)}
   .reform-tag{font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px}
   .reform-agents{font-weight:600;color:var(--text2);opacity:.9}
+  .reform-tov{margin-top:10px;background:var(--green-bg);border-color:var(--green-border)}
+  .reform-tov .reform-tag{color:var(--green)}
   .reform.accepted .reform-tag{color:var(--green)}
   .reform-text{width:100%;min-height:72px;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-family:inherit;font-size:14px;line-height:1.55;background:#fff;color:var(--text);resize:vertical}
   .reform-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}

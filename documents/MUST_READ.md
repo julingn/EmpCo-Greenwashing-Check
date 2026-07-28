@@ -22,7 +22,7 @@
 - **Prüf-Archiv** (`archive.php`): alle Läufe auflisten, öffnen, löschen.
 ### 2-Wege-Prozess (Schritt 4)
 - **Belegen (A/B):** Beleg-Bibliothek im Admin + **Nachweis-Check** je Finding (belegbar / belegt_anpassen / nicht_belegbar).
-- **Umformulieren (C):** Button je Finding; Exakt-Match-Kurzschluss auf geprüfte Beispiele, sonst KI mit **Few-Shot-Beispielen + Belegen**. Danach optional Button **„Tonalität anpassen“** (Stufe 3b, manuell): Brand-Voice-Redakteur schleift den Vorschlag (Basis = editierbarer Textarea-Inhalt), ohne die Konformität zu ändern. Am Vorschlag steht, welche Redakteure beteiligt waren (`agents_used`). Vorschlag editierbar, Übernehmen/Verwerfen.
+- **Umformulieren (C):** Button je Finding; Exakt-Match-Kurzschluss auf geprüfte Beispiele, sonst KI mit **Few-Shot-Beispielen + Belegen**. Danach optional Button **„Tonalität anpassen“** (Stufe 3b, manuell, MVV Brand Voice): erzeugt eine tonale Fassung. **Beide Fassungen bleiben erhalten** (`text` konform + `tov_text` Brand Voice) und werden getrennt angezeigt; der Nutzer übernimmt eine. `agents_used` dokumentiert die beteiligten Redakteure. Vorschläge editierbar, Übernehmen/Verwerfen.
 - **Lernen (D):** akzeptierte Umformulierung → gelerntes `training_example` (Herkunft `learned`); **Un-Learn** per Löschen im Admin.
 
 ## Admin (Sidebar, passwortgeschützt)
@@ -36,7 +36,7 @@
 - **ENV (Railway):** `DATABASE_URL`, `ADMIN_PASSWORD`, ggf. `APP_PASSWORD`, `OPENAI_API_KEY` (`OPENAI_MODEL` default `gpt-4o`), optional `ANTHROPIC_API_KEY`.
 
 ## DB-Schema (in `db_init()` angelegt/migriert)
-`rules` · `analyses` (+`use_js`/`use_ocr`) · `pages` (+`status`/`depth`) · `candidates` · `findings` (+`remedy_path`/`remedy_evidence`/`remedy_note`) · `reformulations` (+`agents_used`) · `training_examples` (+`source`/`finding_id`) · `evidence` · `sitemaps` · `agents` (Redakteure: `reformulator` + `tone_of_voice`) · `settings`
+`rules` · `analyses` (+`use_js`/`use_ocr`) · `pages` (+`status`/`depth`) · `candidates` · `findings` (+`remedy_path`/`remedy_evidence`/`remedy_note`) · `reformulations` (+`agents_used`/`tov_text`) · `training_examples` (+`source`/`finding_id`) · `evidence` · `sitemaps` · `agents` (Redakteure: `reformulator` + `tone_of_voice`) · `settings`
 
 ## Wichtige gelernte Fallstricke
 - **PDO + PostgreSQL Boolean:** PHP-`false` wird zu `''` → Boolean-Bind **immer als `(int)` (0/1)** übergeben (sonst `22P02`).

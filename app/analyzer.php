@@ -830,10 +830,10 @@ function apply_tone_of_voice(string $text, array $f): array {
 }
 
 /**
- * Stufe 3b (manuell): wendet den Tonalitäts-Redakteur auf die aktuelle
- * Umformulierung eines Findings an. Basis ist der übergebene (ggf. editierte)
- * Text oder – falls leer – der gespeicherte Vorschlag. Aktualisiert den Datensatz
- * und ergänzt agents_used. Rückgabe: ['text'=>…, 'id'=>…, 'agents'=>…] oder ['error'=>…].
+ * Stufe 3b (manuell): erzeugt aus der EmpCo-konformen Umformulierung eine tonale
+ * Brand-Voice-Fassung und speichert sie SEPARAT (tov_text) — die konforme Basis
+ * bleibt erhalten. Basis ist der übergebene (ggf. editierte) Text oder – falls leer –
+ * der gespeicherte Vorschlag. Rückgabe: ['text'=>…, 'id'=>…] oder ['error'=>…].
  */
 function tone_reformulation(int $findingId, string $baseText = ''): array {
     if (trim(tone_prompt()) === '') {
@@ -849,19 +849,20 @@ function tone_reformulation(int $findingId, string $baseText = ''): array {
     $rf = $rStmt->fetch();
     if (!$rf) { return ['error' => 'Keine Umformulierung vorhanden.']; }
 
-    $src = trim($baseText) !== '' ? trim($baseText) : (string)$rf['text'];
-    if (trim($src) === '') { return ['error' => 'Kein Text zum Anpassen.']; }
+    $base = trim($baseText) !== '' ? trim($baseText) : (string)$rf['text'];
+    if (trim($base) === '') { return ['error' => 'Kein Text zum Anpassen.']; }
 
-    [$toned, $applied] = apply_tone_of_voice($src, $f);
+    [$toned, $applied] = apply_tone_of_voice($base, $f);
     if (!$applied) { return ['error' => 'Tonalitätsanpassung fehlgeschlagen.']; }
 
-    $agents = (string)($rf['agents_used'] ?? '');
-    if (mb_stripos($agents, 'Tonalität') === false) {
-        $agents = $agents === '' ? 'Tonalität (Brand Voice)' : $agents . ' + Tonalität (Brand Voice)';
-    }
-    db()->prepare("UPDATE reformulations SET text = :t, agents_used = :ag WHERE id = :id")
-        ->execute([':t' => mb_substr($toned, 0, 4000), ':ag' => $agents, ':id' => (int)$rf['id']]);
-    return ['text' => $toned, 'id' => (int)$rf['id'], 'agents' => $agents];
+    // Editierte Basis mitspeichern; tonale Fassung getrennt ablegen (Basis bleibt).
+    db()->prepare("UPDATE reformulations SET text = :b, tov_text = :tv WHERE id = :id")
+        ->execute([
+            ':b'  => mb_substr($base, 0, 4000),
+            ':tv' => mb_substr($toned, 0, 4000),
+            ':id' => (int)$rf['id'],
+        ]);
+    return ['text' => $toned, 'id' => (int)$rf['id']];
 }
 
 /**

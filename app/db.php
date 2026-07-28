@@ -137,6 +137,8 @@ function db_init(): void {
     ");
     // Migration: welche KI-Redakteure am Vorschlag beteiligt waren (Transparenz)
     db()->exec("ALTER TABLE reformulations ADD COLUMN IF NOT EXISTS agents_used TEXT");
+    // Migration: tonale Fassung (Brand Voice) getrennt von der EmpCo-konformen Basis
+    db()->exec("ALTER TABLE reformulations ADD COLUMN IF NOT EXISTS tov_text TEXT");
 
     // Trainingsbeispiele / Vorher-Nachher (Few-Shot für Umformulierung, Stufe C+D)
     db()->exec("
